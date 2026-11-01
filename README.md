@@ -6,16 +6,19 @@
 
 TubeGrab is a small, native-feeling Linux desktop utility for downloading video and audio with
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) and FFmpeg. It keeps the original Tkinter/ttk toolkit
-used by the original project, adds a dark GNOME-friendly interface, a sequential download queue,
-and a metadata preview, and installs entirely in your home directory.
+used by the original project, adds an Apple-inspired light/dark interface, a sequential download
+queue, and a metadata preview, and installs entirely in your home directory.
 
 Use it only for content you own, have permission to download, or are otherwise legally entitled
 to save. Respect the source site's terms and applicable copyright law.
 
 ## Features
 
-- Apple-inspired light/dark interface that follows the GNOME color scheme, with rounded cards,
-  a segmented format picker, and keyboard-accessible custom controls.
+- Apple-inspired light/dark interface that follows the GNOME color scheme, with antialiased
+  rounded surfaces, a gray-and-blue palette, a segmented format picker, and keyboard-accessible
+  custom controls.
+- Compact responsive layout: the native title bar is the only header, Preview always matches the
+  Options card height, and narrow windows stack the URL actions and cards instead of clipping.
 - Explicit metadata preview: title, thumbnail, duration, uploader/channel, resolutions, and audio
   formats (no video download is performed for previews).
 - Sequential download queue: add more links while one is downloading, cancel the active item,
@@ -34,6 +37,13 @@ to save. Respect the source site's terms and applicable copyright law.
 - Cancellation terminates the whole yt-dlp/FFmpeg process group, not just the parent process.
 - Concise user-facing errors with full diagnostics in a separate Details window and a rotating log.
 - Per-user GNOME application launcher and icon.
+
+## Project status
+
+- Version **1.2.0** on the `feature/apple-ui` branch.
+- 62 automated tests; the GUI smoke tests run when a display is available.
+- Fedora `noarch` RPM is built with `./packaging/build-rpm.sh`.
+- Larger design/build notes: [PROJECT_STATE.md](PROJECT_STATE.md) and [BUILD-NOTES.txt](BUILD-NOTES.txt).
 
 ## Requirements
 
@@ -261,6 +271,8 @@ packaging/
 install.sh
 uninstall.sh
 tests/
+PROJECT_STATE.md
+BUILD-NOTES.txt
 LICENSE
 ```
 
@@ -273,3 +285,7 @@ LICENSE
 - Dependency installation is not automatic; Fedora commands are documented and shown in the app.
 - The interface uses Tkinter, so it follows the system's available Tk fonts and X11/Wayland window
   decorations rather than drawing its own custom title bar.
+- Text antialiasing requires a Tk build with Xft. The installer prefers one; a Python whose Tk was
+  built without Xft falls back to un-antialiased core fonts.
+- Tk Canvas cannot render CSS-style shadows or backdrop blur; cards use antialiased corner tiles,
+  hairline borders, and subtle flat depth instead.

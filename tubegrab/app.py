@@ -70,6 +70,8 @@ QUALITY_OPTIONS: tuple[tuple[str, int | None], ...] = (
 )
 QUALITY_LABEL_TO_VALUE = dict(QUALITY_OPTIONS)
 QUALITY_VALUE_TO_LABEL = {value: label for label, value in QUALITY_OPTIONS}
+URL_STACK_WIDTH = 740
+GRID_STACK_WIDTH = 820
 
 
 def _quality_label(quality: int | None) -> str:
@@ -615,7 +617,7 @@ class TubeGrabApp:
         link_section.grid(row=1, column=0, sticky="ew", pady=(0, 18))
         link_section.columnconfigure(0, weight=1)
 
-        url_row = tk.Frame(link_section, background=palette.content)
+        self.url_row = url_row = tk.Frame(link_section, background=palette.content)
         url_row.grid(row=0, column=0, sticky="ew")
         url_row.columnconfigure(0, weight=1)
 
@@ -675,13 +677,13 @@ class TubeGrabApp:
         self.input_error_label.grid(row=2, column=0, sticky="w", pady=(6, 0))
         self.input_error_label.grid_remove()
 
-        grid_section = tk.Frame(page, background=palette.content)
+        self.grid_section = grid_section = tk.Frame(page, background=palette.content)
         grid_section.grid(row=2, column=0, sticky="ew", pady=(0, 18))
         grid_section.columnconfigure(0, weight=0, minsize=440)
         grid_section.columnconfigure(1, weight=1)
         grid_section.rowconfigure(0, weight=1)
 
-        options_column = tk.Frame(grid_section, background=palette.content)
+        self.options_column = options_column = tk.Frame(grid_section, background=palette.content)
         options_column.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
         tk.Label(
             options_column,
@@ -691,7 +693,7 @@ class TubeGrabApp:
             font=fonts.section,
         ).pack(anchor="w", padx=4, pady=(0, 6))
 
-        options_card = Card(options_column, padding=(2, 2), background=palette.content)
+        self.options_card = options_card = Card(options_column, padding=(2, 2), background=palette.content)
         options_card.pack(fill="x")
         options = options_card.body
         options.columnconfigure(0, weight=1)
@@ -803,9 +805,9 @@ class TubeGrabApp:
             wraplength=880,
             justify="left",
         )
-        self.quality_note.grid(row=1, column=0, columnspan=2, sticky="w", padx=4, pady=(7, 0))
+        self.quality_note.grid(row=2, column=0, columnspan=2, sticky="w", padx=4, pady=(7, 0))
 
-        preview_column = tk.Frame(grid_section, background=palette.content)
+        self.preview_column = preview_column = tk.Frame(grid_section, background=palette.content)
         preview_column.grid(row=0, column=1, sticky="nsew")
         tk.Label(
             preview_column,
@@ -1013,6 +1015,18 @@ class TubeGrabApp:
         )
         self.status_open_button.pack(side="right", padx=(0, 16))
 
+        self._narrow_url: bool | None = None
+        self._narrow_grid: bool | None = None
+        page.bind("<Configure>", self._on_page_resize, add="+")
+        self.options_card.bind(
+            "<Configure>",
+            lambda _event: self._sync_stacked_preview_height(),
+            add="+",
+        )
+        self.root.after_idle(
+            lambda: self._apply_responsive_layout(self.page.inner.winfo_width())
+        )
+
         self.url_entry.bind("<Return>", lambda _event: self._add_download())
         self.url_entry.bind("<Control-Return>", lambda _event: self._start_preview())
 
@@ -1042,6 +1056,80 @@ class TubeGrabApp:
             foreground=palette.text2,
             font=self.fonts.small,
         ).pack(side="left", padx=(5, 0))
+
+    def _on_page_resize(self, event: tk.Event) -> None:
+        self._apply_responsive_layout(event.width)
+
+    def _apply_responsive_layout(self, width: int) -> None:
+        if width < 200:
+            return
+        url_narrow = width < URL_STACK_WIDTH
+        grid_narrow = width < GRID_STACK_WIDTH
+
+        if url_narrow != self._narrow_url:
+            self._narrow_url = url_narrow
+            if url_narrow:
+                self.url_field.grid_configure(
+                    row=0, column=0, columnspan=2, sticky="ew"
+                )
+                self.preview_button.grid_configure(
+                    row=1, column=0, sticky="ew", padx=(0, 5), pady=(8, 0)
+                )
+                self.download_button.grid_configure(
+                    row=1, column=1, sticky="ew", padx=(5, 0), pady=(8, 0)
+                )
+                self.url_row.columnconfigure(0, weight=1)
+                self.url_row.columnconfigure(1, weight=1)
+                self.url_row.columnconfigure(2, weight=0)
+            else:
+                self.url_field.grid_configure(
+                    row=0, column=0, columnspan=1, sticky="ew"
+                )
+                self.preview_button.grid_configure(
+                    row=0, column=1, sticky="", padx=(10, 0), pady=0
+                )
+                self.download_button.grid_configure(
+                    row=0, column=2, sticky="", padx=(10, 0), pady=0
+                )
+                self.url_row.columnconfigure(0, weight=1)
+                self.url_row.columnconfigure(1, weight=0)
+                self.url_row.columnconfigure(2, weight=0)
+
+        if grid_narrow != self._narrow_grid:
+            self._narrow_grid = grid_narrow
+            if grid_narrow:
+                self.options_column.grid_configure(
+                    row=0, column=0, columnspan=2, sticky="nsew", padx=0, pady=0
+                )
+                self.preview_column.grid_configure(
+                    row=1, column=0, columnspan=2, sticky="nsew", padx=0, pady=(14, 0)
+                )
+                self.grid_section.columnconfigure(0, weight=1, minsize=0)
+                self.grid_section.columnconfigure(1, weight=0, minsize=0)
+            else:
+                self.options_column.grid_configure(
+                    row=0, column=0, columnspan=1, sticky="nsew", padx=(0, 20), pady=0
+                )
+                self.preview_column.grid_configure(
+                    row=0, column=1, columnspan=1, sticky="nsew", padx=0, pady=0
+                )
+                self.grid_section.columnconfigure(0, weight=0, minsize=440)
+                self.grid_section.columnconfigure(1, weight=1, minsize=0)
+
+        self._sync_stacked_preview_height()
+
+    def _sync_stacked_preview_height(self) -> None:
+        if self._narrow_grid:
+            height = max(138, self.options_card.winfo_height())
+            if height > 1 and self.preview_card.winfo_height() != height:
+                self.preview_card.configure(height=height)
+        else:
+            try:
+                current = int(self.preview_card.cget("height"))
+            except (ValueError, tk.TclError):
+                current = 0
+            if current != 1:
+                self.preview_card.configure(height=1)
 
     def _paste_url(self) -> None:
         try:
