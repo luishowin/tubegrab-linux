@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=TubeGrab
+GenericName=Video Downloader
+Comment=Download video and audio from supported sites
+Exec=@EXEC@
+Icon=tubegrab
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=download;video;audio;youtube;yt-dlp;
+StartupNotify=true
+StartupWMClass=Tubegrab
+X-TubeGrab-Managed=true
