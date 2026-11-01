@@ -1,36 +1,184 @@
-"""Understated dark ttk theme for TubeGrab."""
+"""Apple-inspired light/dark theme for TubeGrab.
+
+Tkinter cannot render CSS shadows or backdrop blurs, so the palette, type
+scale, and spacing follow the design mockup while rounded surfaces are drawn
+on Canvas widgets in :mod:`tubegrab.widgets`.
+"""
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import tkinter as tk
 import tkinter.font as tkfont
 from dataclasses import dataclass
 from tkinter import ttk
 
-# Charcoal surfaces with a restrained GNOME-blue accent.
-BG = "#252525"
-SURFACE = "#2d2d2d"
-SURFACE_ALT = "#343434"
-INSET = "#222222"
-FIELD = "#1f1f1f"
-TRACK = "#202020"
-STATUS_BG = "#202020"
-BORDER = "#3d3d3d"
-BORDER_HOVER = "#505050"
-TEXT = "#f0f0f0"
-MUTED = "#a6a6a6"
-FAINT = "#7d7d7d"
-ACCENT = "#3584e4"
-ACCENT_HOVER = "#4a91e8"
-ACCENT_PRESSED = "#2a75c9"
-ACCENT_SOFT = "#2e4b68"
-ACCENT_SOFT_HOVER = "#365a7d"
-ACCENT_BORDER = "#5b8dbf"
-ERROR = "#ff7b72"
-WARNING = "#f0c674"
-WARNING_BG = "#3a3128"
-SUCCESS = "#8bd17c"
-THUMB_BG = "#1b1b1b"
+
+@dataclass(frozen=True)
+class Palette:
+    name: str
+    window: str
+    content: str
+    card: str
+    card_border: str
+    shadow: str
+    text: str
+    text2: str
+    text3: str
+    accent: str
+    accent_hover: str
+    accent_pressed: str
+    accent_soft: str
+    green: str
+    red: str
+    amber: str
+    fill: str
+    fill_strong: str
+    sep: str
+    field: str
+    field_border: str
+    field_focus: str
+    seg_track: str
+    seg_thumb: str
+    thumb_top: str
+    thumb_middle: str
+    thumb_bottom: str
+    notice_bg: str
+    notice_text: str
+    log_bg: str
+    log_text: str
+    selection: str
+    selection_text: str
+
+
+LIGHT = Palette(
+    name="light",
+    window="#ffffff",
+    content="#f5f5f7",
+    card="#ffffff",
+    card_border="#e3e3e6",
+    shadow="#ececf0",
+    text="#1d1d1f",
+    text2="#6e6e73",
+    text3="#a1a1a6",
+    accent="#007aff",
+    accent_hover="#0a84ff",
+    accent_pressed="#0063cc",
+    accent_soft="#e5f1ff",
+    green="#30b350",
+    red="#ff3b30",
+    amber="#b25000",
+    fill="#ececef",
+    fill_strong="#dedee3",
+    sep="#e6e6ea",
+    field="#ffffff",
+    field_border="#d8d8dd",
+    field_focus="#007aff",
+    seg_track="#ececef",
+    seg_thumb="#ffffff",
+    thumb_top="#9fbfb0",
+    thumb_middle="#5f8573",
+    thumb_bottom="#2f4a3d",
+    notice_bg="#fff4e2",
+    notice_text="#8a5300",
+    log_bg="#f5f5f7",
+    log_text="#1d1d1f",
+    selection="#cfe7ff",
+    selection_text="#1d1d1f",
+)
+
+DARK = Palette(
+    name="dark",
+    window="#1e1e1e",
+    content="#1c1c1e",
+    card="#2a2a2c",
+    card_border="#3a3a3e",
+    shadow="#151517",
+    text="#f5f5f7",
+    text2="#a5a5ad",
+    text3="#6b6b72",
+    accent="#0a84ff",
+    accent_hover="#3d9bff",
+    accent_pressed="#0063cc",
+    accent_soft="#14324f",
+    green="#32d74b",
+    red="#ff453a",
+    amber="#f0c674",
+    fill="#343437",
+    fill_strong="#45454a",
+    sep="#333336",
+    field="#2a2a2c",
+    field_border="#414146",
+    field_focus="#0a84ff",
+    seg_track="#343437",
+    seg_thumb="#636366",
+    thumb_top="#5c7a68",
+    thumb_middle="#3b5546",
+    thumb_bottom="#22362a",
+    notice_bg="#3a3128",
+    notice_text="#f0c674",
+    log_bg="#1c1c1e",
+    log_text="#e5e5e7",
+    selection="#31557a",
+    selection_text="#ffffff",
+)
+
+_PALETTE = LIGHT
+_FONTS: "Fonts | None" = None
+
+
+def current_palette() -> Palette:
+    return _PALETTE
+
+
+def current_fonts() -> "Fonts":
+    assert _FONTS is not None, "apply_theme() must run before creating widgets"
+    return _FONTS
+
+
+def detect_appearance() -> str:
+    """Return ``light`` or ``dark`` using the GNOME session preference."""
+
+    override = os.environ.get("TUBEGRAB_THEME", "").strip().lower()
+    if override in {"light", "dark"}:
+        return override
+
+    if shutil.which("gsettings"):
+        try:
+            result = subprocess.run(
+                ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+                check=False,
+            )
+            if "prefer-dark" in result.stdout:
+                return "dark"
+            theme = subprocess.run(
+                ["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"],
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+                check=False,
+            )
+            if "dark" in theme.stdout.lower():
+                return "dark"
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    gtk_theme = os.environ.get("GTK_THEME", "").lower()
+    if "dark" in gtk_theme:
+        return "dark"
+    return "light"
+
+
+def _font_family(families: set[str], candidates: tuple[str, ...], fallback: str) -> str:
+    for candidate in candidates:
+        if candidate.lower() in families:
+            return families[candidate.lower()]
+    return fallback
 
 
 @dataclass
@@ -39,6 +187,7 @@ class Fonts:
     base_bold: tkfont.Font
     small: tkfont.Font
     small_bold: tkfont.Font
+    tiny: tkfont.Font
     section: tkfont.Font
     title: tkfont.Font
     subtitle: tkfont.Font
@@ -47,14 +196,12 @@ class Fonts:
     row_title: tkfont.Font
 
 
-def _font_family(families: set[str], candidates: tuple[str, ...], fallback: str) -> str:
-    for candidate in candidates:
-        if candidate in families:
-            return candidate
-    return fallback
-
-
 def apply_theme(root: tk.Tk) -> Fonts:
+    global _PALETTE, _FONTS
+
+    palette = DARK if detect_appearance() == "dark" else LIGHT
+    _PALETTE = palette
+
     style = ttk.Style(root)
     try:
         style.theme_use("clam")
@@ -64,12 +211,21 @@ def apply_theme(root: tk.Tk) -> Fonts:
     families = {name.lower(): name for name in tkfont.families(root)}
     base_family = _font_family(
         families,
-        ("cantarell", "adwaita sans", "inter", "noto sans", "liberation sans", "dejavu sans"),
+        (
+            "sf pro text",
+            "sf pro display",
+            "inter",
+            "adwaita sans",
+            "cantarell",
+            "noto sans",
+            "liberation sans",
+            "dejavu sans",
+        ),
         tkfont.nametofont("TkDefaultFont").actual("family"),
     )
     mono_family = _font_family(
         families,
-        ("adwaita mono", "jetbrains mono", "noto sans mono", "liberation mono", "dejavu sans mono"),
+        ("sf mono", "adwaita mono", "jetbrains mono", "noto sans mono", "liberation mono", "dejavu sans mono"),
         tkfont.nametofont("TkFixedFont").actual("family"),
     )
 
@@ -88,286 +244,124 @@ def apply_theme(root: tk.Tk) -> Fonts:
         base_bold=tkfont.Font(root=root, family=base_family, size=10, weight="bold"),
         small=tkfont.Font(root=root, family=base_family, size=9),
         small_bold=tkfont.Font(root=root, family=base_family, size=9, weight="bold"),
-        section=tkfont.Font(root=root, family=base_family, size=10, weight="bold"),
-        title=tkfont.Font(root=root, family=base_family, size=20, weight="bold"),
+        tiny=tkfont.Font(root=root, family=base_family, size=8),
+        section=tkfont.Font(root=root, family=base_family, size=8, weight="bold"),
+        title=tkfont.Font(root=root, family=base_family, size=12, weight="bold"),
         subtitle=tkfont.Font(root=root, family=base_family, size=9),
         mono=tkfont.Font(root=root, family=mono_family, size=9),
         button=tkfont.Font(root=root, family=base_family, size=10),
         row_title=tkfont.Font(root=root, family=base_family, size=10, weight="bold"),
     )
+    _FONTS = fonts
 
-    root.configure(background=BG)
-    style.configure("TFrame", background=BG)
-    style.configure("Card.TFrame", background=SURFACE)
-    style.configure("Inset.TFrame", background=INSET)
-    style.configure("Header.TFrame", background=BG)
-    style.configure("Status.TFrame", background=STATUS_BG)
-    style.configure("Queue.TFrame", background=SURFACE)
-    style.configure("QueueOuter.TFrame", background=BG)
+    root.configure(background=palette.content)
+    root.option_add("*Menu.background", palette.card)
+    root.option_add("*Menu.foreground", palette.text)
+    root.option_add("*Menu.activeBackground", palette.accent)
+    root.option_add("*Menu.activeForeground", "#ffffff")
+    root.option_add("*Menu.selectColor", palette.accent)
+    root.option_add("*Menu.relief", "flat")
+    root.option_add("*Menu.borderWidth", "0")
+    root.option_add("*Menu.font", fonts.base)
+    root.option_add("*TCombobox*Listbox.background", palette.card)
+    root.option_add("*TCombobox*Listbox.foreground", palette.text)
+    root.option_add("*TCombobox*Listbox.selectBackground", palette.accent)
+    root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+    root.option_add("*TCombobox*Listbox.font", fonts.base)
 
-    style.configure("TLabel", background=BG, foreground=TEXT, font=fonts.base)
-    style.configure("Muted.TLabel", background=BG, foreground=MUTED, font=fonts.small)
-    style.configure("Faint.TLabel", background=BG, foreground=FAINT, font=fonts.small)
-    style.configure("Title.TLabel", background=BG, foreground=TEXT, font=fonts.title)
-    style.configure("Subtitle.TLabel", background=BG, foreground=MUTED, font=fonts.subtitle)
-    style.configure("Section.TLabel", background=BG, foreground=TEXT, font=fonts.section)
-    style.configure("Error.TLabel", background=BG, foreground=ERROR, font=fonts.small)
+    style.configure("TFrame", background=palette.content)
+    style.configure("Card.TFrame", background=palette.card)
+    style.configure("Status.TFrame", background=palette.content)
+
+    style.configure("TLabel", background=palette.content, foreground=palette.text, font=fonts.base)
+    style.configure("Muted.TLabel", background=palette.content, foreground=palette.text2, font=fonts.small)
+    style.configure("Faint.TLabel", background=palette.content, foreground=palette.text3, font=fonts.small)
+    style.configure("Title.TLabel", background=palette.content, foreground=palette.text, font=fonts.title)
+    style.configure("Subtitle.TLabel", background=palette.content, foreground=palette.text2, font=fonts.subtitle)
+    style.configure("Section.TLabel", background=palette.content, foreground=palette.text2, font=fonts.section)
+    style.configure("Error.TLabel", background=palette.content, foreground=palette.red, font=fonts.small)
     style.configure(
         "Warning.TLabel",
-        background=WARNING_BG,
-        foreground=WARNING,
+        background=palette.notice_bg,
+        foreground=palette.notice_text,
         font=fonts.small,
-        padding=(12, 8),
+        padding=(12, 9),
     )
+    style.configure("Card.TLabel", background=palette.card, foreground=palette.text, font=fonts.base)
+    style.configure("CardBold.TLabel", background=palette.card, foreground=palette.text, font=fonts.base_bold)
+    style.configure("CardMuted.TLabel", background=palette.card, foreground=palette.text2, font=fonts.small)
+    style.configure("CardError.TLabel", background=palette.card, foreground=palette.red, font=fonts.small)
+    style.configure("CardSuccess.TLabel", background=palette.card, foreground=palette.green, font=fonts.small)
+    style.configure("QueueTitle.TLabel", background=palette.card, foreground=palette.text, font=fonts.row_title)
+    style.configure("QueueMuted.TLabel", background=palette.card, foreground=palette.text2, font=fonts.small)
+    style.configure("QueueError.TLabel", background=palette.card, foreground=palette.red, font=fonts.small)
+    style.configure("QueueSuccess.TLabel", background=palette.card, foreground=palette.green, font=fonts.small)
+    style.configure("Status.TLabel", background=palette.content, foreground=palette.text2, font=fonts.small)
+    style.configure("StatusMuted.TLabel", background=palette.content, foreground=palette.text2, font=fonts.small)
 
-    style.configure("Card.TLabel", background=SURFACE, foreground=TEXT, font=fonts.base)
-    style.configure("CardBold.TLabel", background=SURFACE, foreground=TEXT, font=fonts.base_bold)
-    style.configure("CardMuted.TLabel", background=SURFACE, foreground=MUTED, font=fonts.small)
-    style.configure("CardSection.TLabel", background=SURFACE, foreground=TEXT, font=fonts.section)
-    style.configure("CardError.TLabel", background=SURFACE, foreground=ERROR, font=fonts.small)
-    style.configure("CardSuccess.TLabel", background=SURFACE, foreground=SUCCESS, font=fonts.small)
-
-    style.configure("Inset.TLabel", background=INSET, foreground=TEXT, font=fonts.base)
-    style.configure("InsetTitle.TLabel", background=INSET, foreground=TEXT, font=fonts.base_bold)
-    style.configure("InsetMuted.TLabel", background=INSET, foreground=MUTED, font=fonts.small)
-    style.configure("InsetError.TLabel", background=INSET, foreground=ERROR, font=fonts.small)
-    style.configure("InsetSection.TLabel", background=INSET, foreground=MUTED, font=fonts.small_bold)
-
-    style.configure("Queue.TLabel", background=SURFACE, foreground=TEXT, font=fonts.base)
-    style.configure("QueueTitle.TLabel", background=SURFACE, foreground=TEXT, font=fonts.row_title)
-    style.configure("QueueMuted.TLabel", background=SURFACE, foreground=MUTED, font=fonts.small)
-    style.configure("QueueError.TLabel", background=SURFACE, foreground=ERROR, font=fonts.small)
-    style.configure("QueueSuccess.TLabel", background=SURFACE, foreground=SUCCESS, font=fonts.small)
-
-    style.configure("Status.TLabel", background=STATUS_BG, foreground=TEXT, font=fonts.small)
-    style.configure("StatusMuted.TLabel", background=STATUS_BG, foreground=MUTED, font=fonts.small)
-
-    button_options = dict(
+    style.configure(
+        "TButton",
         font=fonts.button,
         padding=(12, 7),
         anchor="center",
         relief="flat",
-        borderwidth=1,
-        bordercolor=BORDER,
-        lightcolor=SURFACE_ALT,
-        darkcolor=SURFACE_ALT,
-        background=SURFACE_ALT,
-        foreground=TEXT,
-        focuscolor=ACCENT,
+        borderwidth=0,
+        background=palette.fill,
+        foreground=palette.text,
+        focuscolor=palette.accent,
     )
-    style.configure("TButton", **button_options)
     style.map(
         "TButton",
-        background=[("pressed", FIELD), ("active", BORDER_HOVER), ("disabled", SURFACE)],
-        foreground=[("disabled", FAINT)],
-        bordercolor=[("focus", ACCENT), ("active", BORDER_HOVER)],
-        lightcolor=[("pressed", FIELD), ("active", BORDER_HOVER)],
-        darkcolor=[("pressed", FIELD), ("active", BORDER_HOVER)],
+        background=[("pressed", palette.fill_strong), ("active", palette.fill_strong), ("disabled", palette.content)],
+        foreground=[("disabled", palette.text3)],
     )
-
     style.configure(
         "Accent.TButton",
-        **{
-            **button_options,
-            "background": ACCENT,
-            "foreground": "#ffffff",
-            "bordercolor": ACCENT,
-            "lightcolor": ACCENT,
-            "darkcolor": ACCENT,
-        },
+        background=palette.accent,
+        foreground="#ffffff",
+        focuscolor=palette.accent,
     )
     style.map(
         "Accent.TButton",
-        background=[
-            ("pressed", ACCENT_PRESSED),
-            ("active", ACCENT_HOVER),
-            ("disabled", "#3a4654"),
-        ],
-        foreground=[("disabled", "#9aa4ae")],
-        bordercolor=[("pressed", ACCENT_PRESSED), ("active", ACCENT_HOVER), ("focus", "#9cc7ff")],
-        lightcolor=[("pressed", ACCENT_PRESSED), ("active", ACCENT_HOVER)],
-        darkcolor=[("pressed", ACCENT_PRESSED), ("active", ACCENT_HOVER)],
+        background=[("pressed", palette.accent_pressed), ("active", palette.accent_hover)],
+        foreground=[("disabled", palette.text3)],
     )
-
     style.configure(
         "Ghost.TButton",
-        **{**button_options, "background": SURFACE, "bordercolor": SURFACE, "lightcolor": SURFACE, "darkcolor": SURFACE, "foreground": MUTED},
+        background=palette.content,
+        foreground=palette.text2,
     )
     style.map(
         "Ghost.TButton",
-        background=[("pressed", SURFACE_ALT), ("active", SURFACE_ALT)],
-        foreground=[("active", TEXT), ("disabled", FAINT)],
-        bordercolor=[("focus", ACCENT)],
-        lightcolor=[("active", SURFACE_ALT)],
-        darkcolor=[("active", SURFACE_ALT)],
-    )
-
-    style.configure(
-        "Small.TButton",
-        **{
-            **button_options,
-            "padding": (9, 4),
-            "font": fonts.small,
-            "background": SURFACE_ALT,
-            "bordercolor": BORDER,
-            "lightcolor": SURFACE_ALT,
-            "darkcolor": SURFACE_ALT,
-        },
-    )
-    style.map(
-        "Small.TButton",
-        background=[("pressed", FIELD), ("active", BORDER_HOVER), ("disabled", SURFACE)],
-        foreground=[("disabled", FAINT)],
-        bordercolor=[("focus", ACCENT), ("active", BORDER_HOVER)],
-        lightcolor=[("pressed", FIELD), ("active", BORDER_HOVER)],
-        darkcolor=[("pressed", FIELD), ("active", BORDER_HOVER)],
-    )
-
-    style.configure(
-        "SmallGhost.TButton",
-        **{
-            **button_options,
-            "padding": (8, 3),
-            "font": fonts.small,
-            "background": SURFACE,
-            "bordercolor": SURFACE,
-            "lightcolor": SURFACE,
-            "darkcolor": SURFACE,
-            "foreground": MUTED,
-        },
-    )
-    style.map(
-        "SmallGhost.TButton",
-        background=[("pressed", SURFACE_ALT), ("active", SURFACE_ALT)],
-        foreground=[("active", TEXT), ("disabled", FAINT)],
-        bordercolor=[("focus", ACCENT)],
-        lightcolor=[("active", SURFACE_ALT)],
-        darkcolor=[("active", SURFACE_ALT)],
-    )
-
-    style.configure("StatusSmall.TButton", **{**button_options, "padding": (8, 3), "font": fonts.small, "background": STATUS_BG, "bordercolor": STATUS_BG, "lightcolor": STATUS_BG, "darkcolor": STATUS_BG, "foreground": MUTED})
-    style.map(
-        "StatusSmall.TButton",
-        background=[("pressed", SURFACE_ALT), ("active", SURFACE_ALT)],
-        foreground=[("active", TEXT), ("disabled", FAINT)],
-        bordercolor=[("focus", ACCENT)],
-        lightcolor=[("active", SURFACE_ALT)],
-        darkcolor=[("active", SURFACE_ALT)],
-    )
-
-    style.configure(
-        "Segment.Toolbutton",
-        font=fonts.base,
-        padding=(12, 7),
-        anchor="center",
-        relief="flat",
-        borderwidth=1,
-        background=SURFACE_ALT,
-        foreground=MUTED,
-        bordercolor=BORDER,
-        lightcolor=SURFACE_ALT,
-        darkcolor=SURFACE_ALT,
-        focuscolor=ACCENT,
-    )
-    style.map(
-        "Segment.Toolbutton",
-        background=[
-            ("selected", ACCENT_SOFT),
-            ("active", "selected", ACCENT_SOFT_HOVER),
-            ("pressed", ACCENT_SOFT),
-            ("active", BORDER_HOVER),
-            ("disabled", SURFACE),
-        ],
-        foreground=[("selected", TEXT), ("active", TEXT), ("disabled", FAINT)],
-        bordercolor=[("selected", ACCENT_BORDER), ("focus", ACCENT)],
-        lightcolor=[("selected", ACCENT_SOFT), ("active", BORDER_HOVER)],
-        darkcolor=[("selected", ACCENT_SOFT), ("active", BORDER_HOVER)],
-    )
-
-    style.configure(
-        "TEntry",
-        fieldbackground=FIELD,
-        foreground=TEXT,
-        insertcolor=TEXT,
-        bordercolor=BORDER,
-        lightcolor=BORDER,
-        darkcolor=BORDER,
-        padding=(8, 7),
-        relief="flat",
-    )
-    style.map(
-        "TEntry",
-        fieldbackground=[("disabled", SURFACE), ("readonly", SURFACE)],
-        foreground=[("disabled", MUTED), ("readonly", MUTED)],
-        bordercolor=[("focus", ACCENT)],
-        lightcolor=[("focus", ACCENT)],
-        darkcolor=[("focus", ACCENT)],
-    )
-
-    style.configure(
-        "TCombobox",
-        fieldbackground=FIELD,
-        background=SURFACE_ALT,
-        foreground=TEXT,
-        arrowcolor=MUTED,
-        bordercolor=BORDER,
-        lightcolor=BORDER,
-        darkcolor=BORDER,
-        padding=(8, 5),
-        relief="flat",
-    )
-    style.map(
-        "TCombobox",
-        fieldbackground=[("readonly", FIELD), ("disabled", SURFACE)],
-        foreground=[("disabled", MUTED), ("readonly", TEXT)],
-        arrowcolor=[("disabled", FAINT)],
-        bordercolor=[("focus", ACCENT)],
-        lightcolor=[("focus", ACCENT)],
-        darkcolor=[("focus", ACCENT)],
-    )
-    root.option_add("*TCombobox*Listbox.background", SURFACE_ALT)
-    root.option_add("*TCombobox*Listbox.foreground", TEXT)
-    root.option_add("*TCombobox*Listbox.selectBackground", ACCENT_SOFT)
-    root.option_add("*TCombobox*Listbox.selectForeground", TEXT)
-    root.option_add("*TCombobox*Listbox.font", fonts.base)
-    root.option_add("*TCombobox*Listbox.borderWidth", "0")
-
-    style.configure(
-        "TG.Horizontal.TProgressbar",
-        troughcolor=TRACK,
-        background=ACCENT,
-        lightcolor=ACCENT,
-        darkcolor=ACCENT,
-        bordercolor=TRACK,
-        thickness=6,
-        borderwidth=0,
-    )
-    style.configure(
-        "Queue.Horizontal.TProgressbar",
-        troughcolor=FIELD,
-        background=ACCENT,
-        lightcolor=ACCENT,
-        darkcolor=ACCENT,
-        bordercolor=FIELD,
-        thickness=5,
-        borderwidth=0,
+        background=[("pressed", palette.fill), ("active", palette.fill)],
+        foreground=[("active", palette.text), ("disabled", palette.text3)],
     )
 
     style.configure(
         "Vertical.TScrollbar",
-        background=BORDER,
-        troughcolor=BG,
-        bordercolor=BG,
-        arrowcolor=MUTED,
-        lightcolor=BORDER,
-        darkcolor=BORDER,
+        background=palette.fill_strong,
+        troughcolor=palette.content,
+        bordercolor=palette.content,
+        arrowcolor=palette.text3,
+        lightcolor=palette.fill_strong,
+        darkcolor=palette.fill_strong,
         width=10,
         arrowsize=10,
     )
     style.map(
         "Vertical.TScrollbar",
-        background=[("pressed", ACCENT), ("active", BORDER_HOVER)],
-        arrowcolor=[("active", TEXT)],
+        background=[("pressed", palette.accent), ("active", palette.text3)],
     )
-    style.configure("TSeparator", background=BORDER)
+    style.configure("TSeparator", background=palette.sep)
+    style.configure(
+        "TEntry",
+        fieldbackground=palette.field,
+        foreground=palette.text,
+        insertcolor=palette.text,
+        bordercolor=palette.field_border,
+        lightcolor=palette.field_border,
+        darkcolor=palette.field_border,
+        padding=(8, 7),
+        relief="flat",
+    )
     return fonts

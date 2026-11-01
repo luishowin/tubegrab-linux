@@ -14,7 +14,8 @@ to save. Respect the source site's terms and applicable copyright law.
 
 ## Features
 
-- Dark charcoal interface with keyboard-accessible controls.
+- Apple-inspired light/dark interface that follows the GNOME color scheme, with rounded cards,
+  a segmented format picker, and keyboard-accessible custom controls.
 - Explicit metadata preview: title, thumbnail, duration, uploader/channel, resolutions, and audio
   formats (no video download is performed for previews).
 - Sequential download queue: add more links while one is downloading, cancel the active item,
@@ -112,7 +113,7 @@ A system-wide `noarch` RPM can be built from the project directory:
 ```bash
 sudo dnf install rpm-build
 ./packaging/build-rpm.sh
-sudo dnf install dist/tubegrab-1.1.1-1.fc44.noarch.rpm
+sudo dnf install dist/tubegrab-1.2.0-1.fc44.noarch.rpm
 ```
 
 The RPM installs the application under `/usr/share/tubegrab`, the `tubegrab` command in
@@ -247,9 +248,10 @@ tubegrab/
   downloader.py          yt-dlp commands, metadata, progress, cancellation
   queue.py               sequential queue state machine
   config.py              XDG paths and atomic settings
-  theme.py               dark ttk theme and font selection
+  theme.py               light/dark palettes, font selection, ttk styles
+  widgets.py             canvas-drawn rounded controls and layout helpers
   utils.py               URL, filename, format, and desktop helpers
-  assets/                SVG icon and PNG sizes
+  assets/                SVG icon, PNG sizes, and UI icons
 desktop/tubegrab.desktop.in
 packaging/
   tubegrab.spec          Fedora RPM spec

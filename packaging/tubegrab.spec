@@ -1,5 +1,5 @@
 Name:           tubegrab
-Version:        1.1.1
+Version:        1.2.0
 Release:        1%{?dist}
 Summary:        Download video and audio with yt-dlp and FFmpeg
 
@@ -85,5 +85,7 @@ fi
 %doc README.md
 
 %changelog
+* Sun Nov 01 2026 Luis Maina <luis.howin.maina@gmail.com> - 1.2.0-1
+- Rebuild the interface with an Apple-inspired light/dark design.
 * Sun Nov 01 2026 Luis Maina <luis.howin.maina@gmail.com> - 1.1.1-1
 - Update the application logo and add Fedora RPM packaging.

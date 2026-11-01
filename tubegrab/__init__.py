@@ -4,4 +4,4 @@ from __future__ import annotations
 
 APP_NAME = "TubeGrab"
 APP_ID = "tubegrab"
-__version__ = "1.1.1"
+__version__ = "1.2.0"

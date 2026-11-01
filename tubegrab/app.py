@@ -32,12 +32,18 @@ from .downloader import (
 )
 from .logging_setup import LoggingState
 from .queue import ACTIVE_STATUSES, JobStatus, QueueManager, DownloadJob
-from .theme import (
-    BG,
-    FAINT,
-    INSET,
-    THUMB_BG,
-    apply_theme,
+from .theme import apply_theme, current_fonts, current_palette
+from .widgets import (
+    Card,
+    PopupSelect,
+    RoundedButton,
+    ScrollFrame,
+    SearchField,
+    SegmentedControl,
+    StatusDot,
+    ThinProgress,
+    load_icon,
+    separator,
 )
 from .utils import (
     ValidationError,
@@ -91,71 +97,208 @@ class QueueRow:
         on_remove: Any,
         on_open: Any,
     ) -> None:
-        self.frame = ttk.Frame(parent, style="Queue.TFrame", padding=(12, 9))
-        self.frame.columnconfigure(0, weight=1)
+        palette = current_palette()
+        fonts = current_fonts()
+        self._palette = palette
+        self._fonts = fonts
+        self.frame = tk.Frame(parent, background=palette.card)
+        self.frame.columnconfigure(1, weight=1)
+        self.separator = tk.Frame(self.frame, height=1, background=palette.sep)
+        self.separator.grid(row=0, column=0, columnspan=3, sticky="ew")
+        self.separator.grid_propagate(False)
 
-        left = ttk.Frame(self.frame, style="Queue.TFrame")
-        left.grid(row=0, column=0, sticky="nsew")
-        left.columnconfigure(0, weight=1)
+        self.thumb = tk.Canvas(
+            self.frame,
+            width=76,
+            height=43,
+            background=palette.card,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        self.thumb.grid(row=1, column=0, rowspan=4, sticky="nw", padx=(14, 12), pady=10)
+        self._thumb_photo: tk.PhotoImage | None = None
+        self._thumb_key: tuple[str, int] | None = None
+        self._draw_placeholder()
 
-        self.title_label = ttk.Label(left, text="", style="QueueTitle.TLabel", anchor="w")
+        self.meta = tk.Frame(self.frame, background=palette.card)
+        self.meta.grid(row=1, column=1, sticky="nsew", pady=(10, 10))
+        self.meta.columnconfigure(0, weight=1)
+
+        self.title_label = ttk.Label(
+            self.meta, text="", style="QueueTitle.TLabel", anchor="w", justify="left"
+        )
         self.title_label.grid(row=0, column=0, sticky="w")
-        self.meta_label = ttk.Label(left, text="", style="QueueMuted.TLabel", anchor="w")
-        self.meta_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
-        self.message_label = ttk.Label(
-            left,
+
+        status_row = tk.Frame(self.meta, background=palette.card)
+        status_row.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self.status_icon = tk.Label(
+            status_row,
             text="",
-            style="QueueError.TLabel",
+            image="",
+            background=palette.card,
+            borderwidth=0,
+        )
+        self.status_icon.pack(side="left", padx=(0, 4))
+        self.status_label = tk.Label(
+            status_row,
+            text="",
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
+            anchor="w",
+        )
+        self.status_label.pack(side="left")
+        self.meta_separator = tk.Label(
+            status_row,
+            text="·",
+            background=palette.card,
+            foreground=palette.text3,
+            font=fonts.small,
+        )
+        self.meta_separator.pack(side="left", padx=6)
+        self.meta_label = tk.Label(
+            status_row,
+            text="",
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
+            anchor="w",
+        )
+        self.meta_label.pack(side="left")
+
+        self.message_label = tk.Label(
+            self.meta,
+            text="",
+            background=palette.card,
+            foreground=palette.red,
+            font=fonts.small,
             anchor="w",
             justify="left",
-            wraplength=620,
+            wraplength=560,
         )
         self.message_label.grid(row=2, column=0, sticky="w", pady=(3, 0))
         self.message_label.grid_remove()
-        self.bar = ttk.Progressbar(
-            left,
-            style="Queue.Horizontal.TProgressbar",
-            mode="determinate",
-            maximum=100,
-        )
-        self.bar.grid(row=3, column=0, sticky="ew", pady=(7, 0))
-        self.bar.grid_remove()
-        self._bar_mode: str | None = None
-        self._bar_visible_applied: bool | None = None
 
-        actions = ttk.Frame(self.frame, style="Queue.TFrame")
-        actions.grid(row=0, column=1, sticky="ne", padx=(12, 0))
-        self.cancel_button = ttk.Button(
-            actions, text="Cancel", style="Small.TButton", command=lambda: on_cancel(self.job.id)
+        self.progress = ThinProgress(self.meta, background=palette.card)
+        self.progress.grid(row=3, column=0, sticky="ew", pady=(7, 0))
+        self.progress.grid_remove()
+        self._progress_visible = False
+
+        actions = tk.Frame(self.frame, background=palette.card)
+        actions.grid(row=1, column=2, sticky="ne", padx=(12, 14), pady=10)
+        self.cancel_button = RoundedButton(
+            actions,
+            "Cancel",
+            style="small",
+            background=palette.card,
+            command=lambda: on_cancel(self.job.id),
         )
-        self.retry_button = ttk.Button(
-            actions, text="Retry", style="Small.TButton", command=lambda: on_retry(self.job.id)
+        self.retry_button = RoundedButton(
+            actions,
+            "Retry",
+            style="small",
+            background=palette.card,
+            command=lambda: on_retry(self.job.id),
         )
-        self.remove_button = ttk.Button(
-            actions, text="Remove", style="SmallGhost.TButton", command=lambda: on_remove(self.job.id)
+        self.open_button = RoundedButton(
+            actions,
+            "Show",
+            style="small",
+            background=palette.card,
+            command=lambda: on_open(self.job.id),
         )
-        self.open_button = ttk.Button(
-            actions, text="Open", style="Small.TButton", command=lambda: on_open(self.job.id)
+        self.remove_button = RoundedButton(
+            actions,
+            "",
+            style="ghost",
+            background=palette.card,
+            image=load_icon("x"),
+            width=28,
+            height=28,
+            command=lambda: on_remove(self.job.id),
         )
         self._buttons = (self.cancel_button, self.retry_button, self.open_button, self.remove_button)
         self._action_state: str | None = None
         self.job: DownloadJob = None  # type: ignore[assignment]
 
-    def update(self, job: DownloadJob) -> None:
+    def _draw_placeholder(self) -> None:
+        self.thumb.delete("all")
+        palette = self._palette
+        colors = (palette.thumb_top, palette.thumb_middle, palette.thumb_bottom)
+        width, height = 76, 43
+        for index in range(9):
+            t = index / 8
+            if t < 0.5:
+                color = _blend(colors[0], colors[1], t * 2)
+            else:
+                color = _blend(colors[1], colors[2], (t - 0.5) * 2)
+            y1 = int(index * height / 9)
+            y2 = int((index + 1) * height / 9) + 1
+            self.thumb.create_rectangle(0, y1, width, y2, fill=color, outline="")
+        self.thumb.create_polygon(
+            34,
+            15,
+            34,
+            28,
+            45,
+            21.5,
+            fill="#ffffff",
+            outline="",
+            tags="glyph",
+        )
+        self._thumb_photo = None
+
+    def set_thumbnail(self, source: tk.PhotoImage | None) -> None:
+        if source is None:
+            if self._thumb_key is not None:
+                self._thumb_key = None
+                self._draw_placeholder()
+            return
+        key = (str(source), id(source))
+        if self._thumb_key == key:
+            return
+        self._thumb_key = key
+        factor = max(1, round(min(source.width() / 76, source.height() / 43)))
+        photo = source.subsample(factor, factor) if factor > 1 else source
+        self._thumb_photo = photo
+        self.thumb.delete("all")
+        self.thumb.create_rectangle(0, 0, 76, 43, fill=self._palette.thumb_bottom, outline="")
+        self.thumb.create_image(38, 21.5, image=photo)
+
+    def update(self, job: DownloadJob, thumbnail: tk.PhotoImage | None = None) -> None:
         self.job = job
+        self.set_thumbnail(thumbnail)
         self.title_label.configure(text=truncate_text(job.display_title, 110))
-        meta = f"{_mode_description(job)}  ·  {self._status_text(job)}"
-        self.meta_label.configure(text=truncate_text(meta, 150))
+        self.meta_label.configure(text=truncate_text(_mode_description(job), 90))
+        status = self._status_text(job)
+        self.status_label.configure(text=truncate_text(status, 80))
+        if job.status == JobStatus.COMPLETED:
+            self.status_label.configure(foreground=self._palette.green)
+            self.status_icon.configure(image=load_icon("check"))
+            self.status_icon.image = load_icon("check")  # type: ignore[attr-defined]
+        elif job.status == JobStatus.FAILED:
+            self.status_label.configure(foreground=self._palette.red)
+            self.status_icon.configure(image=load_icon("x"))
+            self.status_icon.image = load_icon("x")  # type: ignore[attr-defined]
+        else:
+            self.status_label.configure(foreground=self._palette.text2)
+            self.status_icon.configure(image="")
+            self.status_icon.image = None  # type: ignore[attr-defined]
 
         message = ""
-        message_style = "QueueError.TLabel"
         if job.status == JobStatus.FAILED and job.message:
             message = job.message
         elif job.status == JobStatus.COMPLETED and job.already_exists:
             message = job.message
-            message_style = "QueueSuccess.TLabel"
         if message:
-            self.message_label.configure(text=truncate_text(message, 260), style=message_style)
+            self.message_label.configure(
+                text=truncate_text(message, 260),
+                foreground=(
+                    self._palette.green
+                    if job.status == JobStatus.COMPLETED
+                    else self._palette.red
+                ),
+            )
             self.message_label.grid()
         else:
             self.message_label.grid_remove()
@@ -163,10 +306,9 @@ class QueueRow:
         self._update_buttons(job)
         self._update_bar(job)
 
-        wraplength = max(260, self.frame.winfo_width() - 190)
+        wraplength = max(240, self.frame.winfo_width() - 250)
         try:
             self.title_label.configure(wraplength=wraplength)
-            self.meta_label.configure(wraplength=wraplength)
             self.message_label.configure(wraplength=wraplength)
         except tk.TclError:
             pass
@@ -181,8 +323,8 @@ class QueueRow:
             return "Fetching information…"
         if job.status == JobStatus.DOWNLOADING:
             phase = job.phase or "Downloading…"
-            if phase.startswith("Video · "):
-                phase = phase.removeprefix("Video · ")
+            if phase.startswith("Video · ") or phase.startswith("Audio · "):
+                phase = "Downloading"
             parts = [phase]
             if job.progress is not None:
                 parts.append(f"{job.progress:.0f}%")
@@ -217,10 +359,10 @@ class QueueRow:
             if state == "active":
                 self.cancel_button.pack(side="left")
             elif state == "retry":
-                self.retry_button.pack(side="left", padx=(0, 4))
+                self.retry_button.pack(side="left", padx=(0, 6))
                 self.remove_button.pack(side="left")
             elif state == "completed":
-                self.open_button.pack(side="left", padx=(0, 4))
+                self.open_button.pack(side="left", padx=(0, 6))
                 self.remove_button.pack(side="left")
             else:
                 self.remove_button.pack(side="left")
@@ -231,32 +373,19 @@ class QueueRow:
     def _update_bar(self, job: DownloadJob) -> None:
         active = job.status in ACTIVE_STATUSES
         if not active:
-            if self._bar_visible_applied is not False:
-                self.bar.stop()
-                self.bar.grid_remove()
-                self._bar_visible_applied = False
+            if self._progress_visible:
+                self.progress.grid_remove()
+                self._progress_visible = False
             return
 
-        if self._bar_visible_applied is not True:
-            self.bar.grid()
-            self._bar_visible_applied = True
-
+        if not self._progress_visible:
+            self.progress.grid()
+            self._progress_visible = True
         indeterminate = job.status == JobStatus.FETCHING or job.indeterminate or job.progress is None
-        if indeterminate:
-            if self._bar_mode != "indeterminate":
-                self.bar.stop()
-                self.bar.configure(mode="indeterminate")
-                self.bar.start(16)
-                self._bar_mode = "indeterminate"
-        else:
-            if self._bar_mode != "determinate":
-                self.bar.stop()
-                self.bar.configure(mode="determinate")
-                self._bar_mode = "determinate"
-            self.bar["value"] = max(0.0, min(100.0, job.progress or 0.0))
+        self.progress.set_value(None if indeterminate else job.progress)
 
 
-class QueueView(ttk.Frame):
+class QueueView(tk.Frame):
     def __init__(
         self,
         master: tk.Widget,
@@ -265,82 +394,26 @@ class QueueView(ttk.Frame):
         on_remove: Any,
         on_open: Any,
     ) -> None:
-        super().__init__(master, style="QueueOuter.TFrame")
+        palette = current_palette()
+        super().__init__(master, background=palette.card)
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
         self._callbacks = (on_cancel, on_retry, on_remove, on_open)
         self.rows: dict[str, QueueRow] = {}
 
-        self.canvas = tk.Canvas(
+        self.empty_label = tk.Label(
             self,
-            background=BG,
-            highlightthickness=0,
-            borderwidth=0,
-        )
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.scrollbar.grid(row=0, column=1, sticky="ns", padx=(6, 0))
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        self.inner = ttk.Frame(self.canvas, style="QueueOuter.TFrame")
-        self.inner.columnconfigure(0, weight=1)
-        self._window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.inner.bind("<Configure>", self._on_inner_configure)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self._scrollbar_visible = True
-
-        self.empty_label = ttk.Label(
-            self.inner,
-            text="The queue is empty.  Add a link above to start downloading.",
-            style="Muted.TLabel",
+            text="The queue is empty. Add a link above to start downloading.",
+            background=palette.card,
+            foreground=palette.text2,
+            font=current_fonts().small,
             anchor="center",
         )
 
-        self.canvas.bind_all("<MouseWheel>", self._on_wheel)
-        self.canvas.bind_all("<Button-4>", self._on_wheel)
-        self.canvas.bind_all("<Button-5>", self._on_wheel)
-
-    def _on_inner_configure(self, _event: tk.Event) -> None:
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        self._update_scrollbar()
-
-    def _on_canvas_configure(self, event: tk.Event) -> None:
-        self.canvas.itemconfigure(self._window, width=event.width)
-        self._update_scrollbar()
-
-    def _update_scrollbar(self) -> None:
-        try:
-            needed = self.inner.winfo_reqheight() > self.canvas.winfo_height() + 2
-        except tk.TclError:
-            return
-        if needed == self._scrollbar_visible:
-            return
-        self._scrollbar_visible = needed
-        if needed:
-            self.scrollbar.grid()
-        else:
-            self.canvas.yview_moveto(0)
-            self.scrollbar.grid_remove()
-
-    def _on_wheel(self, event: tk.Event) -> None:
-        try:
-            under_pointer = self.canvas.winfo_containing(event.x_root, event.y_root)
-        except tk.TclError:
-            return
-        if under_pointer is None:
-            return
-        path = str(under_pointer)
-        if not (path == str(self.canvas) or path.startswith(str(self.canvas) + ".")):
-            return
-        if event.num == 4:
-            delta = -1
-        elif event.num == 5:
-            delta = 1
-        else:
-            delta = -1 if event.delta > 0 else 1
-        self.canvas.yview_scroll(delta * 2, "units")
-
-    def sync(self, jobs: list[DownloadJob]) -> None:
+    def sync(
+        self,
+        jobs: list[DownloadJob],
+        thumbnails: dict[str, tk.PhotoImage] | None = None,
+    ) -> None:
         ids = [job.id for job in jobs]
         for job_id in list(self.rows):
             if job_id not in ids:
@@ -349,15 +422,24 @@ class QueueView(ttk.Frame):
         if jobs:
             self.empty_label.pack_forget()
         else:
-            self.empty_label.pack(fill="x", pady=(18, 10))
+            self.empty_label.pack(fill="x", pady=(22, 22))
 
         for job in jobs:
             row = self.rows.get(job.id)
             if row is None:
-                row = QueueRow(self.inner, *self._callbacks)
+                row = QueueRow(self, *self._callbacks)
                 self.rows[job.id] = row
-                row.frame.pack(fill="x", pady=(0, 6))
-            row.update(job)
+                row.frame.pack(fill="x")
+            photo = thumbnails.get(job.url) if thumbnails else None
+            row.update(job, photo)
+
+
+def _blend(start: str, end: str, amount: float) -> str:
+    amount = max(0.0, min(1.0, amount))
+    first = tuple(int(start[index : index + 2], 16) for index in (1, 3, 5))
+    second = tuple(int(end[index : index + 2], 16) for index in (1, 3, 5))
+    values = tuple(round(a + (b - a) * amount) for a, b in zip(first, second))
+    return "#{:02x}{:02x}{:02x}".format(*values)
 
 
 class TubeGrabApp:
@@ -401,11 +483,13 @@ class TubeGrabApp:
         self._log_window: tk.Toplevel | None = None
         self._log_text: tk.Text | None = None
         self._log_after: str | None = None
+        self._job_thumbnails: dict[str, tk.PhotoImage] = {}
 
         self.root.title(APP_NAME)
         self.root.minsize(MIN_WIDTH, MIN_HEIGHT)
         self._apply_window_geometry()
         self.fonts = apply_theme(root)
+        self.palette = current_palette()
 
         try:
             icon_path = Path(__file__).resolve().parent / "assets" / "icon-64.png"
@@ -470,212 +554,374 @@ class TubeGrabApp:
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
     def _build_ui(self) -> None:
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(3, weight=1)
+        palette = self.palette
+        fonts = self.fonts
+        root = self.root
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(1, weight=1)
 
-        header = ttk.Frame(self.root, style="Header.TFrame")
-        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 8))
-        header.columnconfigure(0, weight=1)
-        title_row = ttk.Frame(header, style="Header.TFrame")
-        title_row.grid(row=0, column=0, sticky="w")
-        ttk.Label(title_row, text=APP_NAME, style="Title.TLabel").pack(side="left")
-        ttk.Label(
-            title_row,
-            text=f"  {__version__}",
-            style="Faint.TLabel",
-        ).pack(side="left", pady=(7, 0))
-        ttk.Label(
-            header,
-            text="A small desktop downloader for video and audio.",
-            style="Subtitle.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(1, 0))
+        toolbar = tk.Frame(root, background=palette.content, height=52)
+        toolbar.grid(row=0, column=0, sticky="ew")
+        toolbar.grid_propagate(False)
+        tk.Label(
+            toolbar,
+            text=APP_NAME,
+            background=palette.content,
+            foreground=palette.text,
+            font=fonts.title,
+        ).pack(side="left", padx=(20, 0))
+        self.toolbar_open_button = RoundedButton(
+            toolbar,
+            image=load_icon("folder"),
+            style="ghost",
+            background=palette.content,
+            width=32,
+            height=28,
+            command=self._open_folder,
+        )
+        self.toolbar_open_button.pack(side="right", padx=(0, 14))
+        tk.Frame(toolbar, height=1, background=palette.sep).place(
+            relx=0, rely=1, relwidth=1, anchor="sw"
+        )
+
+        self.page = ScrollFrame(root, background=palette.content, padding=(24, 18))
+        self.page.grid(row=1, column=0, sticky="nsew")
+        page = self.page.inner
+        page.columnconfigure(0, weight=1)
 
         self.banner = ttk.Label(
-            self.root,
+            page,
             text="",
             style="Warning.TLabel",
-            wraplength=900,
+            wraplength=880,
             justify="left",
         )
-        self.banner.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
+        self.banner.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         self.banner.grid_remove()
         self.banner.bind(
             "<Configure>",
             lambda event: self.banner.configure(wraplength=max(400, event.width - 4)),
         )
 
-        card = ttk.Frame(self.root, style="Card.TFrame", padding=(16, 14))
-        card.grid(row=2, column=0, sticky="ew", padx=20)
-        card.columnconfigure(0, weight=1)
+        link_section = tk.Frame(page, background=palette.content)
+        link_section.grid(row=1, column=0, sticky="ew", pady=(0, 22))
+        link_section.columnconfigure(0, weight=1)
 
-        ttk.Label(card, text="Video or audio link", style="CardMuted.TLabel").grid(
-            row=0, column=0, sticky="w"
-        )
-        url_row = ttk.Frame(card, style="Card.TFrame")
-        url_row.grid(row=1, column=0, sticky="ew", pady=(5, 0))
+        url_row = tk.Frame(link_section, background=palette.content)
+        url_row.grid(row=0, column=0, sticky="ew")
         url_row.columnconfigure(0, weight=1)
-        self.url_entry = ttk.Entry(url_row, textvariable=self.url_var, font=self.fonts.base)
-        self.url_entry.grid(row=0, column=0, sticky="ew", ipady=2)
-        self.preview_button = ttk.Button(
-            url_row, text="Preview", command=self._start_preview
-        )
-        self.preview_button.grid(row=0, column=1, padx=(8, 0))
-        self.download_button = ttk.Button(
+
+        self.url_field = SearchField(
             url_row,
-            text="Download",
-            style="Accent.TButton",
+            self.url_var,
+            placeholder="Paste a video or audio link",
+            font=fonts.base,
+            icon=load_icon("link"),
+            background=palette.content,
+        )
+        self.url_field.grid(row=0, column=0, sticky="ew")
+        self.url_entry = self.url_field.entry
+        self.paste_button = RoundedButton(
+            self.url_field,
+            "Paste",
+            style="pill",
+            background=palette.field,
+            command=self._paste_url,
+        )
+        self.url_field.set_accessory(self.paste_button)
+
+        self.preview_button = RoundedButton(
+            url_row,
+            "Preview",
+            style="secondary",
+            background=palette.content,
+            command=self._start_preview,
+        )
+        self.preview_button.grid(row=0, column=1, padx=(10, 0))
+
+        self.download_button = RoundedButton(
+            url_row,
+            "Download",
+            style="primary",
+            background=palette.content,
+            image=load_icon("download"),
             command=self._add_download,
         )
-        self.download_button.grid(row=0, column=2, padx=(8, 0))
+        self.download_button.grid(row=0, column=2, padx=(10, 0))
 
-        hint = ttk.Frame(card, style="Card.TFrame")
-        hint.grid(row=2, column=0, sticky="ew", pady=(5, 0))
-        ttk.Label(
-            hint,
-            text="Enter to download  ·  Ctrl+Enter to preview",
-            style="CardMuted.TLabel",
-        ).pack(side="left")
-        self.input_error_label = ttk.Label(
-            card,
+        hint = tk.Frame(link_section, background=palette.content)
+        hint.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self._shortcut_chip(hint, "Return", "Download")
+        self._shortcut_chip(hint, "Ctrl+Enter", "Preview", padx=(14, 0))
+
+        self.input_error_label = tk.Label(
+            link_section,
             textvariable=self.input_error_var,
-            style="CardError.TLabel",
-            wraplength=780,
+            background=palette.content,
+            foreground=palette.red,
+            font=fonts.small,
+            anchor="w",
             justify="left",
+            wraplength=760,
         )
-        self.input_error_label.grid(row=3, column=0, sticky="w", pady=(4, 0))
+        self.input_error_label.grid(row=2, column=0, sticky="w", pady=(6, 0))
         self.input_error_label.grid_remove()
 
-        content = ttk.Frame(card, style="Card.TFrame")
-        content.grid(row=4, column=0, sticky="nsew", pady=(14, 0))
-        content.columnconfigure(0, weight=0)
-        content.columnconfigure(1, weight=1)
+        grid_section = tk.Frame(page, background=palette.content)
+        grid_section.grid(row=2, column=0, sticky="ew", pady=(0, 22))
+        grid_section.columnconfigure(0, weight=0, minsize=360)
+        grid_section.columnconfigure(1, weight=1)
+        grid_section.rowconfigure(0, weight=1)
 
-        settings = ttk.Frame(content, style="Card.TFrame")
-        settings.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
-        settings.columnconfigure(0, weight=1, minsize=400)
-        ttk.Label(settings, text="Download type", style="CardMuted.TLabel").grid(
-            row=0, column=0, sticky="w"
+        options_column = tk.Frame(grid_section, background=palette.content)
+        options_column.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
+        tk.Label(
+            options_column,
+            text="OPTIONS",
+            background=palette.content,
+            foreground=palette.text2,
+            font=fonts.section,
+        ).pack(anchor="w", padx=4, pady=(0, 6))
+
+        options_card = Card(options_column, padding=(0, 0), background=palette.content)
+        options_card.pack(fill="x")
+        options = options_card.body
+        options.columnconfigure(0, weight=1)
+
+        format_row = tk.Frame(options, background=palette.card)
+        format_row.grid(row=0, column=0, sticky="ew")
+        format_row.columnconfigure(0, weight=1)
+        tk.Label(
+            format_row,
+            text="Format",
+            background=palette.card,
+            foreground=palette.text,
+            font=fonts.base,
+        ).grid(row=0, column=0, sticky="w", padx=(14, 10), pady=10)
+        self.mode_control = SegmentedControl(
+            format_row,
+            self.mode_var,
+            (("video", "Video"), ("audio", "Audio"), ("mp3", "MP3")),
+            background=palette.card,
         )
-        modes = ttk.Frame(settings, style="Card.TFrame")
-        modes.grid(row=1, column=0, sticky="w", pady=(5, 12))
-        for index, (mode, label) in enumerate(
-            (("video", "Video"), ("audio", "Audio · original"), ("mp3", "Audio · MP3"))
-        ):
-            ttk.Radiobutton(
-                modes,
-                text=label,
-                value=mode,
-                variable=self.mode_var,
-                style="Segment.Toolbutton",
-            ).pack(side="left", padx=(0 if index == 0 else 5, 0))
+        self.mode_control.grid(row=0, column=1, sticky="e", padx=(10, 12), pady=8)
 
-        self.quality_label = ttk.Label(settings, text="Video quality", style="CardMuted.TLabel")
-        self.quality_label.grid(row=2, column=0, sticky="w")
-        quality_row = ttk.Frame(settings, style="Card.TFrame")
-        quality_row.grid(row=3, column=0, sticky="ew", pady=(5, 0))
+        separator(options).grid(row=1, column=0, sticky="ew")
+
+        quality_row = tk.Frame(options, background=palette.card)
+        quality_row.grid(row=2, column=0, sticky="ew")
         quality_row.columnconfigure(0, weight=1)
-        self.quality_combo = ttk.Combobox(
+        self.quality_label = tk.Label(
             quality_row,
-            textvariable=self.quality_var,
-            values=[label for label, _ in QUALITY_OPTIONS],
-            state="readonly",
-            width=18,
+            text="Quality",
+            background=palette.card,
+            foreground=palette.text,
+            font=fonts.base,
         )
-        self.quality_combo.grid(row=0, column=0, sticky="w")
-        self.quality_note = ttk.Label(
-            settings,
+        self.quality_label.grid(row=0, column=0, sticky="w", padx=(14, 10), pady=10)
+        self.quality_combo = PopupSelect(
+            quality_row,
+            self.quality_var,
+            [label for label, _value in QUALITY_OPTIONS],
+            background=palette.card,
+            chevron=load_icon("chevron"),
+            command=self._on_quality_changed,
+        )
+        self.quality_combo.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=8)
+        self.quality_static = tk.Label(
+            quality_row,
             text="",
-            style="CardMuted.TLabel",
-            wraplength=400,
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
+        )
+        self.quality_static.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=8)
+        self.quality_static.grid_remove()
+
+        separator(options).grid(row=3, column=0, sticky="ew")
+
+        save_row = tk.Frame(options, background=palette.card)
+        save_row.grid(row=4, column=0, sticky="ew")
+        save_row.columnconfigure(1, weight=1)
+        tk.Label(
+            save_row,
+            text="Save to",
+            background=palette.card,
+            foreground=palette.text,
+            font=fonts.base,
+        ).grid(row=0, column=0, sticky="w", padx=(14, 10), pady=10)
+
+        path_row = tk.Frame(save_row, background=palette.card)
+        path_row.grid(row=0, column=1, sticky="ew", padx=(0, 12), pady=8)
+        path_row.columnconfigure(1, weight=1)
+        tk.Label(path_row, image=load_icon("folder"), background=palette.card).grid(
+            row=0, column=0, padx=(0, 5)
+        )
+        self.folder_entry = tk.Entry(
+            path_row,
+            textvariable=self.folder_var,
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=0,
+            background=palette.card,
+            foreground=palette.text2,
+            insertbackground=palette.text,
+            font=fonts.small,
+        )
+        self.folder_entry.grid(row=0, column=1, sticky="ew")
+        self.browse_button = RoundedButton(
+            path_row,
+            "Choose…",
+            style="small",
+            background=palette.card,
+            command=self._choose_folder,
+        )
+        self.browse_button.grid(row=0, column=2, padx=(6, 0))
+        self.open_folder_button = RoundedButton(
+            path_row,
+            "Open",
+            style="ghost",
+            background=palette.card,
+            width=44,
+            command=self._open_folder,
+        )
+        self.open_folder_button.grid(row=0, column=3, padx=(2, 0))
+
+        self.quality_note = ttk.Label(
+            options_column,
+            text="",
+            style="Muted.TLabel",
+            wraplength=340,
             justify="left",
         )
-        self.quality_note.grid(row=4, column=0, sticky="w", pady=(5, 12))
+        self.quality_note.pack(anchor="w", padx=6, pady=(7, 0))
 
-        ttk.Label(settings, text="Save to", style="CardMuted.TLabel").grid(
-            row=5, column=0, sticky="w"
-        )
-        folder_row = ttk.Frame(settings, style="Card.TFrame")
-        folder_row.grid(row=6, column=0, sticky="ew", pady=(5, 0))
-        folder_row.columnconfigure(0, weight=1)
-        self.folder_entry = ttk.Entry(folder_row, textvariable=self.folder_var)
-        self.folder_entry.grid(row=0, column=0, sticky="ew")
-        self.browse_button = ttk.Button(
-            folder_row, text="Browse", style="Small.TButton", command=self._choose_folder
-        )
-        self.browse_button.grid(row=0, column=1, padx=(6, 0))
-        self.open_folder_button = ttk.Button(
-            folder_row, text="Open", style="Small.TButton", command=self._open_folder
-        )
-        self.open_folder_button.grid(row=0, column=2, padx=(4, 0))
+        preview_column = tk.Frame(grid_section, background=palette.content)
+        preview_column.grid(row=0, column=1, sticky="nsew")
+        tk.Label(
+            preview_column,
+            text="PREVIEW",
+            background=palette.content,
+            foreground=palette.text2,
+            font=fonts.section,
+        ).pack(anchor="w", padx=4, pady=(0, 6))
 
-        preview = ttk.Frame(content, style="Inset.TFrame", padding=(12, 10))
-        preview.grid(row=0, column=1, sticky="nsew")
-        preview.columnconfigure(1, weight=1)
-        preview.rowconfigure(0, weight=1)
-        ttk.Label(preview, text="Preview", style="InsetSection.TLabel").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
+        preview_card = Card(
+            preview_column,
+            padding=(16, 16),
+            autosize=True,
+            min_height=250,
+            background=palette.content,
         )
+        preview_card.pack(fill="x")
+        preview_body = preview_card.body
+        preview_body.columnconfigure(0, weight=1)
+        preview_body.rowconfigure(0, weight=1)
 
-        self.thumb_box = tk.Frame(preview, width=240, height=135, background=THUMB_BG)
-        self.thumb_box.grid(row=1, column=0, rowspan=5, sticky="nw", padx=(0, 12))
+        self.preview_empty = tk.Frame(preview_body, background=palette.card)
+        self.preview_empty.grid(row=0, column=0, sticky="nsew")
+        empty_inner = tk.Frame(self.preview_empty, background=palette.card)
+        empty_inner.place(relx=0.5, rely=0.5, anchor="center")
+        glyph = tk.Canvas(
+            empty_inner,
+            width=56,
+            height=56,
+            background=palette.card,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        glyph.create_polygon(
+            [0, 14, 0, 0, 14, 0, 42, 0, 56, 0, 56, 14, 56, 42, 56, 56, 42, 56, 14, 56, 0, 56, 0, 42],
+            smooth=True,
+            splinesteps=24,
+            fill=palette.fill,
+            outline="",
+        )
+        glyph.create_image(28, 28, image=load_icon("play"))
+        glyph.pack(pady=(0, 12))
+        tk.Label(
+            empty_inner,
+            text="No Preview",
+            background=palette.card,
+            foreground=palette.text,
+            font=fonts.base_bold,
+        ).pack()
+        tk.Label(
+            empty_inner,
+            text="Paste a link and choose Preview.",
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
+        ).pack(pady=(3, 0))
+
+        self.preview_detail = tk.Frame(preview_body, background=palette.card)
+        self.preview_detail.grid(row=0, column=0, sticky="nsew")
+        self.preview_detail.grid_remove()
+        self.preview_detail.columnconfigure(0, weight=1)
+        self.preview_detail.rowconfigure(6, weight=1)
+
+        self.thumb_box = tk.Frame(
+            self.preview_detail,
+            background=palette.thumb_bottom,
+            width=320,
+            height=180,
+        )
+        self.thumb_box.grid(row=0, column=0, sticky="w", pady=(0, 12))
         self.thumb_box.grid_propagate(False)
         self.thumb_label = tk.Label(
             self.thumb_box,
             text="No preview",
-            background=THUMB_BG,
-            foreground=FAINT,
-            font=self.fonts.small,
+            background=palette.thumb_bottom,
+            foreground="#ffffff",
+            font=fonts.small,
         )
         self.thumb_label.pack(fill="both", expand=True)
 
-        text_frame = ttk.Frame(preview, style="Inset.TFrame")
-        text_frame.grid(row=1, column=1, rowspan=5, sticky="nsew")
-        text_frame.columnconfigure(0, weight=1)
         self.preview_title = ttk.Label(
-            text_frame,
+            self.preview_detail,
             textvariable=self.preview_title_var,
-            style="InsetTitle.TLabel",
+            style="QueueTitle.TLabel",
             anchor="w",
             justify="left",
-            wraplength=340,
+            wraplength=420,
         )
-        self.preview_title.grid(row=0, column=0, sticky="w")
+        self.preview_title.grid(row=1, column=0, sticky="w")
         self.preview_meta = ttk.Label(
-            text_frame,
+            self.preview_detail,
             textvariable=self.preview_meta_var,
-            style="InsetMuted.TLabel",
+            style="QueueMuted.TLabel",
             anchor="w",
             justify="left",
-            wraplength=340,
+            wraplength=420,
         )
-        self.preview_meta.grid(row=1, column=0, sticky="w", pady=(3, 0))
+        self.preview_meta.grid(row=2, column=0, sticky="w", pady=(3, 0))
         self.preview_res = ttk.Label(
-            text_frame,
+            self.preview_detail,
             textvariable=self.preview_res_var,
-            style="InsetMuted.TLabel",
+            style="QueueMuted.TLabel",
             anchor="w",
             justify="left",
-            wraplength=340,
+            wraplength=420,
         )
-        self.preview_res.grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.preview_res.grid(row=3, column=0, sticky="w", pady=(8, 0))
         self.preview_audio = ttk.Label(
-            text_frame,
+            self.preview_detail,
             textvariable=self.preview_audio_var,
-            style="InsetMuted.TLabel",
+            style="QueueMuted.TLabel",
             anchor="w",
             justify="left",
-            wraplength=340,
+            wraplength=420,
         )
-        self.preview_audio.grid(row=3, column=0, sticky="w", pady=(3, 0))
+        self.preview_audio.grid(row=4, column=0, sticky="w", pady=(3, 0))
         self.preview_status = ttk.Label(
-            text_frame,
+            self.preview_detail,
             textvariable=self.preview_status_var,
-            style="InsetError.TLabel",
+            style="QueueError.TLabel",
             anchor="w",
             justify="left",
-            wraplength=340,
+            wraplength=420,
         )
-        self.preview_status.grid(row=4, column=0, sticky="w", pady=(8, 0))
+        self.preview_status.grid(row=5, column=0, sticky="w", pady=(8, 0))
 
         def resize_preview(event: tk.Event) -> None:
             wrap = max(180, event.width - 4)
@@ -688,66 +934,124 @@ class TubeGrabApp:
             ):
                 label.configure(wraplength=wrap)
 
-        text_frame.bind("<Configure>", resize_preview)
+        self.preview_detail.bind("<Configure>", resize_preview)
 
-        queue_area = ttk.Frame(self.root, style="TFrame")
-        queue_area.grid(row=3, column=0, sticky="nsew", padx=20, pady=(16, 0))
-        queue_area.columnconfigure(0, weight=1)
-        queue_area.rowconfigure(1, weight=1)
-        queue_header = ttk.Frame(queue_area, style="TFrame")
-        queue_header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        queue_header.columnconfigure(1, weight=1)
-        ttk.Label(queue_header, text="Queue", style="Section.TLabel").grid(
-            row=0, column=0, sticky="w"
-        )
-        ttk.Label(
+        queue_section = tk.Frame(page, background=palette.content)
+        queue_section.grid(row=3, column=0, sticky="ew")
+        queue_section.columnconfigure(0, weight=1)
+        queue_header = tk.Frame(queue_section, background=palette.content)
+        queue_header.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 6))
+        queue_header.columnconfigure(0, weight=1)
+        tk.Label(
             queue_header,
             textvariable=self.queue_count_var,
-            style="Muted.TLabel",
-        ).grid(row=0, column=1, sticky="w", padx=(8, 0))
-        self.clear_button = ttk.Button(
+            background=palette.content,
+            foreground=palette.text2,
+            font=fonts.section,
+        ).grid(row=0, column=0, sticky="w")
+        self.clear_button = RoundedButton(
             queue_header,
-            text="Clear finished",
-            style="Ghost.TButton",
+            "Clear Finished",
+            style="link",
+            background=palette.content,
             command=self._clear_finished,
         )
-        self.clear_button.grid(row=0, column=2, sticky="e")
+        self.clear_button.grid(row=0, column=1, sticky="e")
 
+        self.queue_card = Card(queue_section, padding=(0, 0), background=palette.content)
+        self.queue_card.grid(row=1, column=0, sticky="ew")
         self.queue_view = QueueView(
-            queue_area,
+            self.queue_card.body,
             on_cancel=self._cancel_job,
             on_retry=self._retry_job,
             on_remove=self._remove_job,
             on_open=self._open_job_folder,
         )
-        self.queue_view.grid(row=1, column=0, sticky="nsew")
+        self.queue_view.pack(fill="x")
 
-        status = ttk.Frame(self.root, style="Status.TFrame")
-        status.grid(row=4, column=0, sticky="ew", pady=(14, 0))
-        status.columnconfigure(0, weight=1)
-        ttk.Label(
+        status = tk.Frame(root, background=palette.content, height=34)
+        status.grid(row=2, column=0, sticky="ew")
+        status.grid_propagate(False)
+        tk.Frame(status, height=1, background=palette.sep).place(
+            relx=0, rely=0, relwidth=1, anchor="nw"
+        )
+        StatusDot(status, background=palette.content).pack(side="left", padx=(20, 6))
+        tk.Label(
             status,
             textvariable=self.status_var,
-            style="Status.TLabel",
+            background=palette.content,
+            foreground=palette.text2,
+            font=fonts.small,
             anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=(20, 10), pady=6)
-        self.status_open_button = ttk.Button(
+        ).pack(side="left")
+        self.details_button = RoundedButton(
             status,
-            text="Open folder",
-            style="StatusSmall.TButton",
-            command=self._open_folder,
-        )
-        self.status_open_button.grid(row=0, column=1, padx=(0, 4), pady=4)
-        self.details_button = ttk.Button(
-            status,
-            text="Details",
-            style="StatusSmall.TButton",
+            "Details",
+            style="link",
+            background=palette.content,
             command=self._show_details,
         )
-        self.details_button.grid(row=0, column=2, padx=(0, 14), pady=4)
+        self.details_button.pack(side="right", padx=(0, 18))
+        self.status_open_button = RoundedButton(
+            status,
+            "Open Folder",
+            style="link",
+            background=palette.content,
+            command=self._open_folder,
+        )
+        self.status_open_button.pack(side="right", padx=(0, 16))
 
         self.url_entry.bind("<Return>", lambda _event: self._add_download())
         self.url_entry.bind("<Control-Return>", lambda _event: self._start_preview())
+
+    def _shortcut_chip(
+        self,
+        parent: tk.Widget,
+        keys: str,
+        label: str,
+        *,
+        padx: tuple[int, int] = (0, 0),
+    ) -> None:
+        palette = self.palette
+        chip = tk.Label(
+            parent,
+            text=keys,
+            background=palette.fill,
+            foreground=palette.text2,
+            font=self.fonts.tiny,
+            padx=5,
+            pady=1,
+        )
+        chip.pack(side="left", padx=padx)
+        tk.Label(
+            parent,
+            text=label,
+            background=palette.content,
+            foreground=palette.text2,
+            font=self.fonts.small,
+        ).pack(side="left", padx=(5, 0))
+
+    def _paste_url(self) -> None:
+        try:
+            text = self.root.clipboard_get()
+        except tk.TclError:
+            self._show_input_error("The clipboard is empty.")
+            return
+        self.url_var.set(text.strip())
+        self._clear_input_error()
+        try:
+            self.url_entry.icursor("end")
+            self.url_entry.focus_set()
+        except tk.TclError:
+            pass
+
+    def _show_preview_empty(self) -> None:
+        self.preview_detail.grid_remove()
+        self.preview_empty.grid()
+
+    def _show_preview_detail(self) -> None:
+        self.preview_empty.grid_remove()
+        self.preview_detail.grid()
 
     # --------------------------------------------------------------- appearance
 
@@ -773,6 +1077,7 @@ class TubeGrabApp:
         mode = self.mode_var.get()
         if mode == "video":
             self.quality_label.configure(text="Video quality")
+            self.quality_static.grid_remove()
             self.quality_combo.grid()
             self.quality_note.configure(
                 text="Source quality. Separate video and audio streams are merged into MKV without re-encoding."
@@ -780,12 +1085,16 @@ class TubeGrabApp:
         elif mode == "audio":
             self.quality_label.configure(text="Audio quality")
             self.quality_combo.grid_remove()
+            self.quality_static.configure(text="Original codec")
+            self.quality_static.grid()
             self.quality_note.configure(
                 text="Best available source audio, kept in its original codec (typically Opus or AAC). No lossy conversion."
             )
         else:
             self.quality_label.configure(text="Audio conversion")
             self.quality_combo.grid_remove()
+            self.quality_static.configure(text="MP3 V0")
+            self.quality_static.grid()
             self.quality_note.configure(
                 text="Converts the best source audio to MP3 V0 VBR (~245 kbps). This conversion is lossy."
             )
@@ -802,6 +1111,7 @@ class TubeGrabApp:
         can_open = folder is not None and folder_is_usable(folder)
         self.status_open_button.configure(state="normal" if can_open else "disabled")
         self.open_folder_button.configure(state="normal" if can_open else "disabled")
+        self.toolbar_open_button.configure(state="normal" if can_open else "disabled")
 
     def _current_folder(self) -> Path | None:
         raw = self.folder_var.get().strip()
@@ -890,6 +1200,7 @@ class TubeGrabApp:
         self.preview_res_var.set("")
         self.preview_audio_var.set("")
         self.preview_button.configure(text="Fetching…", state="disabled")
+        self._show_preview_detail()
         self.logger.info("Preview requested for %s", url)
 
         thread = threading.Thread(
@@ -937,6 +1248,7 @@ class TubeGrabApp:
         self.preview_handle = None
         self.preview_button.configure(text="Preview", state="normal")
         self._update_action_states()
+        self._show_preview_detail()
         if not info.thumbnail_url:
             self.thumb_label.configure(image="", text="No preview")
         self.preview_title_var.set(info.display_title)
@@ -962,6 +1274,8 @@ class TubeGrabApp:
             return
         try:
             image = tk.PhotoImage(file=str(path))
+            if self.preview_url:
+                self._job_thumbnails[self.preview_url] = image
             self._thumb_photo = image.subsample(2, 2)
             self.thumb_label.configure(image=self._thumb_photo, text="")
         except tk.TclError:
@@ -977,6 +1291,7 @@ class TubeGrabApp:
         self.preview_handle = None
         self.preview_button.configure(text="Preview", state="normal")
         self._clear_preview()
+        self._show_preview_detail()
         self.preview_title_var.set("Preview unavailable")
         self.preview_meta_var.set("")
         self.preview_status_var.set(message)
@@ -1002,6 +1317,7 @@ class TubeGrabApp:
         self.preview_res_var.set("")
         self.preview_audio_var.set("")
         self.preview_status_var.set("")
+        self._show_preview_empty()
 
     # -------------------------------------------------------------- downloading
 
@@ -1095,9 +1411,11 @@ class TubeGrabApp:
 
     def _sync_queue(self) -> None:
         jobs = self.queue_manager.snapshot() if self.queue_manager is not None else []
-        self.queue_view.sync(jobs)
+        self.queue_view.sync(jobs, self._job_thumbnails)
         count = len(jobs)
-        self.queue_count_var.set(f"{count} item" if count == 1 else f"{count} items")
+        self.queue_count_var.set(
+            f"QUEUE · {count} ITEM" if count == 1 else f"QUEUE · {count} ITEMS"
+        )
         self.clear_button.configure(
             state="normal"
             if any(job.status in {JobStatus.COMPLETED, JobStatus.CANCELLED} for job in jobs)
@@ -1212,11 +1530,12 @@ class TubeGrabApp:
             self._refresh_log()
             return
 
+        palette = self.palette
         window = tk.Toplevel(self.root)
         window.title(f"{APP_NAME} — Activity details")
         window.geometry("780x460")
         window.minsize(560, 300)
-        window.configure(background=BG)
+        window.configure(background=palette.content)
         window.transient(self.root)
         if self._window_icon is not None:
             try:
@@ -1249,11 +1568,11 @@ class TubeGrabApp:
         text = tk.Text(
             text_frame,
             wrap="word",
-            background=INSET,
-            foreground="#d8d8d8",
-            insertbackground="#d8d8d8",
-            selectbackground="#31557a",
-            selectforeground="#ffffff",
+            background=palette.log_bg,
+            foreground=palette.log_text,
+            insertbackground=palette.text,
+            selectbackground=palette.selection,
+            selectforeground=palette.selection_text,
             font=self.fonts.mono,
             padx=10,
             pady=8,
