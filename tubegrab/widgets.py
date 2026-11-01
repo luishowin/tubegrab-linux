@@ -50,26 +50,79 @@ def _mix(first: str, second: str, amount: float) -> str:
     return "#{:02x}{:02x}{:02x}".format(*values)
 
 
-def _round_points(x1: float, y1: float, x2: float, y2: float, radius: float) -> list[float]:
-    radius = max(0.0, min(radius, (x2 - x1) / 2, (y2 - y1) / 2))
-    points = [x1 + radius, y1, x2 - radius, y1]
-    corners = (
-        (x2 - radius, y1 + radius, -90, 0),
-        (x2 - radius, y2 - radius, 0, 90),
-        (x1 + radius, y2 - radius, 90, 180),
-        (x1 + radius, y1 + radius, 180, 270),
-    )
-    steps = 8
-    for center_x, center_y, start, end in corners:
-        for index in range(steps + 1):
-            angle = math.radians(start + (end - start) * index / steps)
-            points.extend(
-                [
-                    center_x + radius * math.cos(angle),
-                    center_y + radius * math.sin(angle),
-                ]
-            )
-    return points
+def _tile_cache() -> dict[tuple[int, str, str, str], dict[str, tk.PhotoImage]]:
+    root = tk._default_root  # type: ignore[attr-defined]
+    cache = getattr(root, "_tubegrab_tile_cache", None) if root is not None else None
+    if cache is None:
+        cache = {}
+        if root is not None:
+            root._tubegrab_tile_cache = cache  # type: ignore[attr-defined]
+    return cache
+
+
+def _corner_tiles(
+    radius: int,
+    fill: str,
+    border: str,
+    background: str,
+) -> dict[str, tk.PhotoImage]:
+    """Render four opaque, antialiased corner tiles for a rounded surface.
+
+    Tk's Canvas has no antialiasing, so corners are pre-blended against the
+    known background colour and drawn as images.  This keeps edges smooth
+    without adding Pillow or Cairo as a dependency.
+    """
+
+    radius = max(2, int(radius))
+    fill = _color(fill)
+    border = _color(border) if border else fill
+    background = _color(background)
+    key = (radius, fill, border, background)
+    cache = _tile_cache()
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    centers = {
+        "nw": (radius, radius),
+        "ne": (0, radius),
+        "sw": (radius, 0),
+        "se": (0, 0),
+    }
+    samples = 6
+    total = samples * samples
+    tiles: dict[str, tk.PhotoImage] = {}
+    for name, (center_x, center_y) in centers.items():
+        image = tk.PhotoImage(width=radius, height=radius)
+        for y in range(radius):
+            row: list[str] = []
+            for x in range(radius):
+                fill_coverage = 0
+                border_coverage = 0
+                if radius <= 2:
+                    fill_coverage = total
+                else:
+                    for sy in range(samples):
+                        py = y + (sy + 0.5) / samples
+                        for sx in range(samples):
+                            px = x + (sx + 0.5) / samples
+                            distance = math.hypot(px - center_x, py - center_y)
+                            if distance <= radius - 1:
+                                fill_coverage += 1
+                            elif distance <= radius:
+                                border_coverage += 1
+                inside = (fill_coverage + border_coverage) / total
+                if inside <= 0:
+                    color = background
+                else:
+                    color = _mix(background, fill, inside)
+                    if border_coverage:
+                        color = _mix(color, border, border_coverage / (fill_coverage + border_coverage))
+                row.append(color)
+            image.put("{" + " ".join(row) + "}", to=(0, y))
+        tiles[name] = image
+    cache[key] = tiles
+    return tiles
 
 
 def draw_round_rect(
@@ -84,15 +137,41 @@ def draw_round_rect(
     outline: str = "",
     width: float = 1,
     tags: str | tuple[str, ...] = (),
-) -> int:
-    return canvas.create_polygon(
-        _round_points(x1, y1, x2, y2, radius),
-        smooth=False,
-        fill=fill,
-        outline=outline,
-        width=width,
-        tags=tags,
-    )
+    background: str | None = None,
+    corners: bool = True,
+) -> None:
+    """Draw an antialiased rounded rectangle on a Canvas."""
+
+    x1, y1, x2, y2 = int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))
+    if x2 <= x1 or y2 <= y1:
+        return
+    fill = _color(fill) if fill else ""
+    outline = _color(outline) if outline else ""
+    background = background or canvas.cget("background")
+    radius = max(0, int(round(radius)))
+    if radius <= 1:
+        canvas.create_rectangle(
+            x1, y1, x2, y2, fill=fill, outline=outline, width=width, tags=tags
+        )
+        return
+
+    canvas.create_rectangle(x1 + radius, y1, x2 - radius, y2, fill=fill, outline="", tags=tags)
+    canvas.create_rectangle(x1, y1 + radius, x2, y2 - radius, fill=fill, outline="", tags=tags)
+    if outline:
+        line_width = max(1, int(round(width)))
+        for start, end in (
+            ((x1 + radius, y1), (x2 - radius, y1)),
+            ((x1 + radius, y2), (x2 - radius, y2)),
+            ((x1, y1 + radius), (x1, y2 - radius)),
+            ((x2, y1 + radius), (x2, y2 - radius)),
+        ):
+            canvas.create_line(*start, *end, fill=outline, width=line_width, tags=tags)
+    if corners:
+        tiles = _corner_tiles(radius, fill or background, outline or fill or background, background)
+        canvas.create_image(x1, y1, anchor="nw", image=tiles["nw"], tags=tags)
+        canvas.create_image(x2 - radius, y1, anchor="nw", image=tiles["ne"], tags=tags)
+        canvas.create_image(x1, y2 - radius, anchor="nw", image=tiles["sw"], tags=tags)
+        canvas.create_image(x2 - radius, y2 - radius, anchor="nw", image=tiles["se"], tags=tags)
 
 
 class Card(tk.Canvas):
@@ -137,14 +216,12 @@ class Card(tk.Canvas):
             anchor="nw",
             window=self.body,
         )
-        self._corners = {
-            name: tk.Canvas(
+        self._corner_labels = {
+            name: tk.Label(
                 self,
-                width=radius + 1,
-                height=radius + 1,
-                background=self._fill,
                 borderwidth=0,
                 highlightthickness=0,
+                background=self._background,
             )
             for name in ("nw", "ne", "sw", "se")
         }
@@ -165,6 +242,7 @@ class Card(tk.Canvas):
                 height,
                 self._radius,
                 fill=self._shadow_color,
+                background=self._background,
                 tags="surface",
             )
         draw_round_rect(
@@ -176,76 +254,29 @@ class Card(tk.Canvas):
             self._radius,
             fill=self._fill,
             outline=self._border,
+            background=self._background,
             tags="surface",
+            corners=False,
         )
         self.tag_lower("surface")
-        self._draw_corners(width, height)
+        self._place_corner_labels(width, height)
 
-    def _draw_corners(self, width: int, height: int) -> None:
+    def _place_corner_labels(self, width: int, height: int) -> None:
         radius = self._radius
-        if radius <= 0:
+        if radius <= 1 or width <= 2 * radius or height <= 2 * radius:
             return
-        size = radius + 1
+        tiles = _corner_tiles(radius, self._fill, self._border, self._background)
         positions = {
             "nw": (1, 1),
-            "ne": (width - size - 1, 1),
-            "sw": (1, height - size - 1),
-            "se": (width - size - 1, height - size - 1),
+            "ne": (width - radius - 1, 1),
+            "sw": (1, height - radius - 1),
+            "se": (width - radius - 1, height - radius - 1),
         }
-        for name, canvas in self._corners.items():
+        for name, label in self._corner_labels.items():
+            label.configure(image=tiles[name])
             x, y = positions[name]
-            canvas.place(x=x, y=y, width=size, height=size)
-            canvas.tk.call("raise", canvas._w)
-            self._paint_corner(name, canvas, size)
-
-    def _paint_corner(self, name: str, canvas: tk.Canvas, size: int) -> None:
-        canvas.delete("all")
-        canvas.configure(background=self._fill)
-        radius = size - 1
-        centers = {
-            "nw": (radius, radius),
-            "ne": (0, radius),
-            "sw": (radius, 0),
-            "se": (0, 0),
-        }
-        starts = {"nw": -90, "ne": 0, "sw": 90, "se": 90}
-        ends = {"nw": -180, "ne": -90, "sw": 180, "se": 0}
-        center_x, center_y = centers[name]
-        start, end = starts[name], ends[name]
-        steps = 8
-        points: list[float] = []
-        for index in range(steps + 1):
-            angle = math.radians(start + (end - start) * index / steps)
-            points.extend(
-                [
-                    center_x + radius * math.cos(angle),
-                    center_y + radius * math.sin(angle),
-                ]
-            )
-        if name == "nw":
-            polygon = [0, 0, radius, 0] + points
-        elif name == "ne":
-            polygon = [0, 0, radius, 0, radius, radius] + points
-        elif name == "sw":
-            polygon = [0, 0, 0, radius, radius, radius] + points
-        else:
-            polygon = [radius, 0, radius, radius, 0, radius] + points
-        canvas.create_polygon(polygon, fill=self._background, outline="")
-        bbox = {
-            "nw": (0, 0, 2 * radius, 2 * radius),
-            "ne": (-radius, 0, radius, 2 * radius),
-            "sw": (0, -radius, 2 * radius, radius),
-            "se": (-radius, -radius, radius, radius),
-        }[name]
-        arc_start = {"nw": 90, "ne": 0, "sw": 90, "se": 0}[name]
-        canvas.create_arc(
-            *bbox,
-            start=arc_start,
-            extent=90,
-            style="arc",
-            outline=self._border,
-            width=1,
-        )
+            label.place(x=x, y=y, width=radius, height=radius)
+            label.lift()
 
     def _on_configure(self, event: tk.Event) -> None:
         self._draw(event.width, event.height)
@@ -396,7 +427,6 @@ class RoundedButton(tk.Canvas):
             borderwidth=0,
             highlightthickness=0,
             takefocus=1,
-            cursor="hand2",
             **kwargs,
         )
         self._measure()
@@ -489,7 +519,40 @@ class RoundedButton(tk.Canvas):
             border = _color(spec["border"]) if spec["border"] else ""
             if disabled and self._style == "secondary":
                 fill = _color("content")
-            draw_round_rect(self, 1, 1, width - 1, height - 1, spec["radius"], fill=fill, outline=border)
+            if self._focused and self._style != "link":
+                draw_round_rect(
+                    self,
+                    0,
+                    0,
+                    width,
+                    height,
+                    spec["radius"] + 1,
+                    fill=palette.accent,
+                )
+                draw_round_rect(
+                    self,
+                    2,
+                    2,
+                    width - 2,
+                    height - 2,
+                    max(2, spec["radius"] - 1),
+                    fill=fill,
+                    outline=border,
+                )
+            else:
+                draw_round_rect(
+                    self, 1, 1, width - 1, height - 1, spec["radius"], fill=fill, outline=border
+                )
+        elif self._focused and not disabled and self._style != "link":
+            draw_round_rect(
+                self,
+                1,
+                1,
+                width - 1,
+                height - 1,
+                spec["radius"] or 7,
+                fill=palette.accent_soft,
+            )
         elif self._hovered and not disabled and spec["hover"] is not None:
             draw_round_rect(
                 self,
@@ -516,23 +579,10 @@ class RoundedButton(tk.Canvas):
         if self._text:
             self.create_text(text_x, height / 2, text=self._text, anchor="w", fill=color, font=font)
 
-        if self._focused and not style_is_link:
-            draw_round_rect(
-                self,
-                1,
-                1,
-                width - 1,
-                height - 1,
-                spec["radius"],
-                outline=getattr(palette, "accent"),
-                width=2,
-            )
-
     # -- events -------------------------------------------------------------
 
     def _on_enter(self, _event: tk.Event) -> None:
         self._hovered = True
-        self.configure(cursor="hand2")
         self._draw()
 
     def _on_leave(self, _event: tk.Event) -> None:
@@ -599,7 +649,6 @@ class SegmentedControl(tk.Canvas):
             borderwidth=0,
             highlightthickness=0,
             takefocus=1,
-            cursor="hand2",
         )
         self._trace = variable.trace_add("write", self._on_variable_changed)
         self.bind("<Configure>", lambda _event: self._draw())
@@ -692,7 +741,6 @@ class PopupSelect(tk.Canvas):
             borderwidth=0,
             highlightthickness=0,
             takefocus=1,
-            cursor="hand2",
         )
         self._menu = tk.Menu(self, tearoff=0)
         for item in self._values:
@@ -802,7 +850,6 @@ class SearchField(tk.Canvas):
             background=palette.field,
             foreground=palette.text3,
             font=self._font,
-            cursor="xterm",
         )
         self._placeholder.bind("<Button-1>", lambda _event: self.entry.focus_set())
         self.entry.bind("<FocusIn>", self._on_focus_in)
@@ -825,19 +872,6 @@ class SearchField(tk.Canvas):
         width = max(40, self.winfo_width())
         height = self._height
         self.delete("surface")
-        border = palette.field_focus if self._focused else palette.field_border
-        draw_round_rect(
-            self,
-            1,
-            1,
-            width - 1,
-            height - 1,
-            11,
-            fill=palette.field,
-            outline=border,
-            width=2 if self._focused else 1,
-            tags="surface",
-        )
         if self._focused:
             draw_round_rect(
                 self,
@@ -846,8 +880,30 @@ class SearchField(tk.Canvas):
                 width,
                 height,
                 12,
-                outline=palette.accent_soft,
-                width=2,
+                fill=palette.accent_soft,
+                tags="surface",
+            )
+            draw_round_rect(
+                self,
+                2,
+                2,
+                width - 2,
+                height - 2,
+                10,
+                fill=palette.field,
+                outline=palette.field_focus,
+                tags="surface",
+            )
+        else:
+            draw_round_rect(
+                self,
+                1,
+                1,
+                width - 1,
+                height - 1,
+                11,
+                fill=palette.field,
+                outline=palette.field_border,
                 tags="surface",
             )
         if self._icon is not None:
@@ -960,8 +1016,8 @@ class StatusDot(tk.Canvas):
             borderwidth=0,
             highlightthickness=0,
         )
-        self.create_oval(0, 1, 14, 15, fill=_mix(self._color, self._background, 0.78), outline="")
-        self.create_oval(3, 4, 11, 12, fill=self._color, outline="")
+        self._image = _dot_image(self._color, self._background)
+        self.create_image(8, 8, image=self._image)
 
 
 class ScrollFrame(tk.Frame):
@@ -1043,6 +1099,39 @@ class ScrollFrame(tk.Frame):
         else:
             delta = -1 if event.delta > 0 else 1
         self.canvas.yview_scroll(delta * 2, "units")
+
+
+def _dot_image(color: str, background: str, size: int = 16) -> tk.PhotoImage:
+    color = _color(color)
+    background = _color(background)
+    halo = _mix(color, background, 0.78)
+    image = tk.PhotoImage(width=size, height=size)
+    center = size / 2
+    samples = 4
+    total = samples * samples
+    for y in range(size):
+        row: list[str] = []
+        for x in range(size):
+            halo_count = 0
+            dot_count = 0
+            for sy in range(samples):
+                py = y + (sy + 0.5) / samples
+                for sx in range(samples):
+                    px = x + (sx + 0.5) / samples
+                    distance = math.hypot(px - center, py - center)
+                    if distance <= 7:
+                        halo_count += 1
+                        if distance <= 3.6:
+                            dot_count += 1
+            if halo_count == 0:
+                value = background
+            else:
+                value = _mix(background, halo, halo_count / total)
+                if dot_count:
+                    value = _mix(value, color, dot_count / total)
+            row.append(value)
+        image.put("{" + " ".join(row) + "}", to=(0, y))
+    return image
 
 
 def separator(master: tk.Widget, *, background: str | None = None) -> tk.Frame:

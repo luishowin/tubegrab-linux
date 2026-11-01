@@ -48,6 +48,7 @@ class DownloadService(Protocol):
         output_dir: Path,
         handle: ProcessHandle,
         on_progress: Callable[[ProgressUpdate], None] | None = None,
+        restart: bool = False,
     ) -> DownloadResult: ...
 
 
@@ -70,6 +71,7 @@ class DownloadJob:
     final_path: Path | None = None
     already_exists: bool = False
     cancelling: bool = False
+    restart: bool = False
 
     @property
     def display_title(self) -> str:
@@ -177,7 +179,7 @@ class QueueManager:
         self._changed()
         return True
 
-    def retry(self, job_id: str) -> bool:
+    def retry(self, job_id: str, restart: bool = False) -> bool:
         with self._condition:
             job = next((item for item in self._jobs if item.id == job_id), None)
             if job is None or job.status not in {JobStatus.FAILED, JobStatus.CANCELLED}:
@@ -192,8 +194,9 @@ class QueueManager:
             job.final_path = None
             job.already_exists = False
             job.cancelling = False
+            job.restart = restart
             self._condition.notify_all()
-        self.logger.info("Retrying job %s", job_id)
+        self.logger.info("Retrying job %s (restart=%s)", job_id, restart)
         self._changed()
         return True
 
@@ -294,6 +297,7 @@ class QueueManager:
                     job.output_dir,
                     handle,
                     on_progress,
+                    restart=job.restart,
                 )
                 with self._lock:
                     job.status = JobStatus.COMPLETED

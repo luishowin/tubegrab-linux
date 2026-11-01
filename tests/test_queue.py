@@ -37,6 +37,7 @@ class FakeService:
         self.fetch_gate: threading.Event | None = None
         self.fail_urls: set[str] = set()
         self.starts: Counter[str] = Counter()
+        self.restart_flags: dict[str, list[bool]] = {}
         self._lock = threading.Lock()
 
     def gate(self, url: str) -> threading.Event:
@@ -51,9 +52,19 @@ class FakeService:
                     raise DownloadCancelled()
         return MediaInfo(url=url, title=f"Title for {url}")
 
-    def download(self, url, mode, quality, output_dir, handle, on_progress=None) -> DownloadResult:
+    def download(
+        self,
+        url,
+        mode,
+        quality,
+        output_dir,
+        handle,
+        on_progress=None,
+        restart=False,
+    ) -> DownloadResult:
         with self._lock:
             self.starts[url] += 1
+            self.restart_flags.setdefault(url, []).append(restart)
         self.started.put(url)
         if on_progress is not None:
             on_progress(ProgressUpdate(percent=50.0, phase="Video · 720p"))
@@ -150,6 +161,21 @@ class QueueTests(unittest.TestCase):
                 and self.service.starts[url] == 2
             )
         )
+
+    def test_restart_after_failure_discards_partial(self) -> None:
+        url = "https://example.com/restart"
+        self.service.fail_urls.add(url)
+        job_id, _ = self.add(url)
+        self.assertTrue(wait_for(lambda: self.status(job_id) == JobStatus.FAILED))
+        self.service.fail_urls.remove(url)
+        self.assertTrue(self.manager.retry(job_id, restart=True))
+        self.assertTrue(
+            wait_for(
+                lambda: self.status(job_id) == JobStatus.COMPLETED
+                and self.service.starts[url] == 2
+            )
+        )
+        self.assertEqual(self.service.restart_flags[url], [False, True])
 
     def test_remove_queued_item(self) -> None:
         active = "https://example.com/active"

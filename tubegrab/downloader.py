@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import glob
 import importlib.util
 import json
 import logging
@@ -66,9 +67,9 @@ COMMON_DOWNLOAD_FLAGS = (
     "--socket-timeout",
     "20",
     "--retries",
-    "3",
+    "10",
     "--fragment-retries",
-    "3",
+    "10",
     "--progress-template",
     PROGRESS_TEMPLATE,
     "--print",
@@ -98,6 +99,8 @@ class DependencyStatus:
     ffmpeg: str | None
     ffprobe: str | None
     ytdlp_version: str | None = None
+    js_runtime: str | None = None
+    js_runtimes_supported: bool = False
 
     @property
     def has_ytdlp(self) -> bool:
@@ -190,6 +193,48 @@ def find_ffprobe() -> str | None:
     return None
 
 
+def find_js_runtime() -> str | None:
+    """Return a yt-dlp EJS runtime descriptor such as ``node:/usr/bin/node``."""
+
+    override = os.environ.get("TUBEGRAB_JS_RUNTIME", "").strip()
+    if override:
+        return override
+    for name in ("deno", "node", "bun"):
+        found = shutil.which(name)
+        if found:
+            return f"{name}:{found}"
+    # GNOME's launch environment often omits version-manager shims, so look in
+    # the usual per-user tool directories as a fallback.
+    patterns = (
+        ("node", "~/.local/share/mise/installs/node/*/bin/node"),
+        ("node", "~/.nvm/versions/node/*/bin/node"),
+        ("bun", "~/.bun/bin/bun"),
+        ("deno", "~/.deno/bin/deno"),
+    )
+    for name, pattern in patterns:
+        matches = sorted(glob.glob(os.path.expanduser(pattern)), reverse=True)
+        for match in matches:
+            if os.path.isfile(match) and os.access(match, os.X_OK):
+                return f"{name}:{match}"
+    return None
+
+
+def supports_js_runtimes(command: list[str] | None) -> bool:
+    if not command:
+        return False
+    try:
+        result = subprocess.run(
+            [*command, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return "--js-runtimes" in (result.stdout or "")
+
+
 def _tool_version(command: list[str] | None) -> str | None:
     if not command:
         return None
@@ -211,11 +256,14 @@ def _tool_version(command: list[str] | None) -> str | None:
 
 def detect_dependencies() -> DependencyStatus:
     ytdlp = find_ytdlp_command()
+    js_runtime = find_js_runtime()
     return DependencyStatus(
         ytdlp_command=ytdlp,
         ffmpeg=find_ffmpeg(),
         ffprobe=find_ffprobe(),
         ytdlp_version=_tool_version(ytdlp),
+        js_runtime=js_runtime,
+        js_runtimes_supported=bool(js_runtime) and supports_js_runtimes(ytdlp),
     )
 
 
@@ -223,8 +271,16 @@ def mode_requires_ffmpeg(mode: str) -> bool:
     return mode in {"video", "mp3"}
 
 
-def build_metadata_command(command: list[str], url: str) -> list[str]:
-    return [*command, *METADATA_FLAGS, "--", url]
+def build_metadata_command(
+    command: list[str],
+    url: str,
+    js_runtime: str | None = None,
+) -> list[str]:
+    args = [*command, *METADATA_FLAGS]
+    if js_runtime:
+        args.extend(["--js-runtimes", js_runtime])
+    args.extend(["--", url])
+    return args
 
 
 def build_download_command(
@@ -233,6 +289,8 @@ def build_download_command(
     quality: int | None,
     output_dir: Path,
     url: str,
+    js_runtime: str | None = None,
+    restart: bool = False,
 ) -> list[str]:
     """Build a download command as an argument list (never a shell string)."""
 
@@ -241,7 +299,12 @@ def build_download_command(
     if quality is not None and quality not in {2160, 1440, 1080, 720, 480, 360, 240, 144}:
         raise ValueError(f"Unsupported video quality: {quality}")
 
-    args = [*command, *COMMON_DOWNLOAD_FLAGS, "-P", str(output_dir)]
+    args = [*command, *COMMON_DOWNLOAD_FLAGS]
+    if js_runtime:
+        args.extend(["--js-runtimes", js_runtime])
+    if restart:
+        args.append("--no-continue")
+    args.extend(["-P", str(output_dir)])
     if mode == "video":
         selector = "bv*+ba/b" if quality is None else f"bv*[height<={quality}]+ba/b[height<={quality}]"
         args.extend(["-f", selector, "--merge-output-format", "mkv"])
@@ -441,6 +504,17 @@ def map_error(detail: str, mode: str | None = None) -> str:
         return "Could not resolve the site. Check your internet connection."
     if "timed out" in text or "timeout" in text:
         return "The download timed out. Check your connection and try again."
+    if (
+        "got error" in text
+        or "giving up after" in text
+        or "more expected" in text
+        or "unable to download video data" in text
+        or "content too short" in text
+    ):
+        return (
+            "The server interrupted the transfer. Try Start over to discard the "
+            "partial file and download again."
+        )
     if "this live event will begin" in text or "premieres in" in text:
         return "This live stream has not started yet."
     if "no video formats found" in text or "no formats found" in text:
@@ -554,15 +628,17 @@ class YtDlpDownloader:
         command: list[str],
         ffmpeg: str | None,
         logger: logging.Logger | None = None,
+        js_runtime: str | None = None,
     ) -> None:
         self.command = list(command)
         self.ffmpeg = ffmpeg
         self.logger = logger or LOGGER
+        self.js_runtime = js_runtime
 
     def fetch_info(self, url: str, handle: ProcessHandle | None = None) -> MediaInfo:
         validated = validate_url(url)
         handle = handle or ProcessHandle()
-        args = build_metadata_command(self.command, validated)
+        args = build_metadata_command(self.command, validated, self.js_runtime)
         self.logger.info("Fetching information for %s", validated)
         self.logger.debug("Metadata command: %s", args)
         stdout, stderr, returncode = self._run_capture(args, handle, METADATA_TIMEOUT)
@@ -638,6 +714,7 @@ class YtDlpDownloader:
         output_dir: Path,
         handle: ProcessHandle | None = None,
         on_progress: Callable[[ProgressUpdate], None] | None = None,
+        restart: bool = False,
     ) -> DownloadResult:
         validated = validate_url(url)
         if mode in {"video", "mp3"} and not self.ffmpeg:
@@ -647,15 +724,24 @@ class YtDlpDownloader:
             )
 
         handle = handle or ProcessHandle()
-        args = build_download_command(self.command, mode, quality, output_dir, validated)
+        args = build_download_command(
+            self.command,
+            mode,
+            quality,
+            output_dir,
+            validated,
+            js_runtime=self.js_runtime,
+            restart=restart,
+        )
         if self.ffmpeg:
             marker = args.index("--") if "--" in args else len(args)
             args[marker:marker] = ["--ffmpeg-location", self.ffmpeg]
         self.logger.info(
-            "Starting %s download to %s (quality=%s, url=%s)",
+            "Starting %s download to %s (quality=%s, restart=%s, url=%s)",
             mode,
             output_dir,
             quality or "best",
+            restart,
             validated,
         )
         self.logger.debug("Download command: %s", args)

@@ -17,26 +17,52 @@ if [ ! -d "$SOURCE_DIR/tubegrab" ] || [ ! -f "$SOURCE_DIR/tubegrab/__main__.py" 
     exit 1
 fi
 
-# Pick a Python interpreter that can actually import Tkinter.  The launcher has
-# to use an absolute interpreter path because GNOME's launch environment does
-# not necessarily have a developer's pyenv/mise shims on PATH.
+# Pick a Python interpreter that can import Tkinter and whose Tk build uses
+# Xft.  Tk builds without Xft fall back to un-antialiased core X11 fonts, which
+# makes the entire interface look pixelated.  The launcher must use an absolute
+# interpreter path because GNOME's launch environment does not necessarily
+# have a developer's pyenv/mise shims on PATH.
+tk_xft_probe() {
+    "$1" - <<'PY' >/dev/null 2>&1
+import tkinter as tk
+
+root = tk.Tk()
+root.withdraw()
+try:
+    fontsystem = str(root.tk.call("::tk::pkgconfig", "get", "fontsystem"))
+finally:
+    root.destroy()
+raise SystemExit(0 if fontsystem == "xft" else 1)
+PY
+}
+
 PYTHON="${TUBEGRAB_PYTHON:-}"
+FALLBACK_PYTHON=""
 if [ -z "$PYTHON" ]; then
     for candidate in \
-        "$(command -v python3 2>/dev/null || true)" \
         /usr/bin/python3 \
         /usr/local/bin/python3 \
+        "$(command -v python3 2>/dev/null || true)" \
         "$(command -v python3.14 2>/dev/null || true)" \
         "$(command -v python3.13 2>/dev/null || true)" \
         "$(command -v python3.12 2>/dev/null || true)"
     do
         [ -n "$candidate" ] || continue
         [ -x "$candidate" ] || continue
-        if "$candidate" -c 'import tkinter' >/dev/null 2>&1; then
+        if ! "$candidate" -c 'import tkinter' >/dev/null 2>&1; then
+            continue
+        fi
+        if [ -z "$FALLBACK_PYTHON" ]; then
+            FALLBACK_PYTHON="$candidate"
+        fi
+        if tk_xft_probe "$candidate"; then
             PYTHON="$candidate"
             break
         fi
     done
+    if [ -z "$PYTHON" ]; then
+        PYTHON="$FALLBACK_PYTHON"
+    fi
 fi
 
 if [ -z "$PYTHON" ] || ! "$PYTHON" -c 'import tkinter' >/dev/null 2>&1; then
@@ -47,6 +73,11 @@ if [ -z "$PYTHON" ] || ! "$PYTHON" -c 'import tkinter' >/dev/null 2>&1; then
     exit 1
 fi
 PYTHON=$(readlink -f "$PYTHON" 2>/dev/null || printf '%s' "$PYTHON")
+if ! tk_xft_probe "$PYTHON"; then
+    echo "Warning: $PYTHON uses a Tk build without Xft." >&2
+    echo "Text will not be antialiased. On Fedora, install python3-tkinter and" >&2
+    echo "leave TUBEGRAB_PYTHON unset to use the system interpreter." >&2
+fi
 
 PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
@@ -95,7 +126,7 @@ content = f"""#!/bin/sh
 PYTHON={shlex.quote(python)}
 APP_DIR={shlex.quote(app_dir)}
 if [ ! -x "$PYTHON" ] || ! "$PYTHON" -c 'import tkinter' >/dev/null 2>&1; then
-    for candidate in python3 /usr/bin/python3 /usr/local/bin/python3 python3.14 python3.13 python3.12; do
+    for candidate in /usr/bin/python3 /usr/local/bin/python3 python3 python3.14 python3.13 python3.12; do
         resolved=$(command -v "$candidate" 2>/dev/null || true)
         if [ -n "$resolved" ] && "$resolved" -c 'import tkinter' >/dev/null 2>&1; then
             PYTHON=$resolved

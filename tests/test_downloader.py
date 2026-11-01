@@ -77,6 +77,28 @@ class CommandTests(unittest.TestCase):
         )
         self.assertEqual(command[command.index("-P") + 1], str(folder))
 
+    def test_js_runtime_and_restart_flags(self) -> None:
+        command = build_download_command(
+            ["yt-dlp"],
+            "video",
+            1080,
+            Path("/tmp/videos"),
+            "https://example.com/v",
+            js_runtime="node:/usr/bin/node",
+            restart=True,
+        )
+        self.assertEqual(command[command.index("--js-runtimes") + 1], "node:/usr/bin/node")
+        self.assertIn("--no-continue", command)
+
+    def test_metadata_js_runtime_flag(self) -> None:
+        command = build_metadata_command(
+            ["yt-dlp"],
+            "https://example.com/v",
+            js_runtime="node:/usr/bin/node",
+        )
+        self.assertEqual(command[command.index("--js-runtimes") + 1], "node:/usr/bin/node")
+        self.assertEqual(command[-2:], ["--", "https://example.com/v"])
+
     def test_invalid_mode_and_quality_raise(self) -> None:
         with self.assertRaises(ValueError):
             build_download_command(["yt-dlp"], "other", None, Path("/tmp"), "https://e.com")
@@ -201,6 +223,15 @@ class ErrorMappingTests(unittest.TestCase):
 
     def test_mp3_fallback_wording(self) -> None:
         self.assertIn("audio", map_error("ERROR: mystery", mode="mp3").lower())
+
+    def test_interrupted_transfer_suggests_start_over(self) -> None:
+        message = map_error(
+            "ERROR: fragment 3 not found\n"
+            "[download] Got error: 128106 bytes read, 10264620 more expected\n"
+            "[download] Got error: giving up after 3 retries"
+        )
+        self.assertIn("Start over", message)
+        self.assertIn("partial", message.lower())
 
 
 if __name__ == "__main__":

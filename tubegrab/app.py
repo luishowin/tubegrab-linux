@@ -42,6 +42,7 @@ from .widgets import (
     SegmentedControl,
     StatusDot,
     ThinProgress,
+    draw_round_rect,
     load_icon,
     separator,
 )
@@ -94,6 +95,7 @@ class QueueRow:
         parent: tk.Widget,
         on_cancel: Any,
         on_retry: Any,
+        on_restart: Any,
         on_remove: Any,
         on_open: Any,
     ) -> None:
@@ -200,6 +202,13 @@ class QueueRow:
             background=palette.card,
             command=lambda: on_retry(self.job.id),
         )
+        self.restart_button = RoundedButton(
+            actions,
+            "Start over",
+            style="small",
+            background=palette.card,
+            command=lambda: on_restart(self.job.id),
+        )
         self.open_button = RoundedButton(
             actions,
             "Show",
@@ -217,7 +226,13 @@ class QueueRow:
             height=28,
             command=lambda: on_remove(self.job.id),
         )
-        self._buttons = (self.cancel_button, self.retry_button, self.open_button, self.remove_button)
+        self._buttons = (
+            self.cancel_button,
+            self.retry_button,
+            self.restart_button,
+            self.open_button,
+            self.remove_button,
+        )
         self._action_state: str | None = None
         self.job: DownloadJob = None  # type: ignore[assignment]
 
@@ -360,6 +375,7 @@ class QueueRow:
                 self.cancel_button.pack(side="left")
             elif state == "retry":
                 self.retry_button.pack(side="left", padx=(0, 6))
+                self.restart_button.pack(side="left", padx=(0, 6))
                 self.remove_button.pack(side="left")
             elif state == "completed":
                 self.open_button.pack(side="left", padx=(0, 6))
@@ -391,13 +407,14 @@ class QueueView(tk.Frame):
         master: tk.Widget,
         on_cancel: Any,
         on_retry: Any,
+        on_restart: Any,
         on_remove: Any,
         on_open: Any,
     ) -> None:
         palette = current_palette()
         super().__init__(master, background=palette.card)
         self.columnconfigure(0, weight=1)
-        self._callbacks = (on_cancel, on_retry, on_remove, on_open)
+        self._callbacks = (on_cancel, on_retry, on_restart, on_remove, on_open)
         self.rows: dict[str, QueueRow] = {}
 
         self.empty_label = tk.Label(
@@ -465,6 +482,11 @@ class TubeGrabApp:
                 self.dependencies.ytdlp_command or [],
                 self.dependencies.ffmpeg,
                 logger,
+                js_runtime=(
+                    self.dependencies.js_runtime
+                    if self.dependencies.js_runtimes_supported
+                    else None
+                ),
             )
         else:
             self.downloader = None
@@ -490,6 +512,16 @@ class TubeGrabApp:
         self._apply_window_geometry()
         self.fonts = apply_theme(root)
         self.palette = current_palette()
+        try:
+            font_system = str(root.tk.call("::tk::pkgconfig", "get", "fontsystem"))
+        except tk.TclError:
+            font_system = ""
+        if font_system and font_system != "xft":
+            self.logger.warning(
+                "This Python's Tk was built without Xft (%s); text will not be antialiased. "
+                "Use the system python3-tkinter build for smooth text.",
+                font_system,
+            )
 
         try:
             icon_path = Path(__file__).resolve().parent / "assets" / "icon-64.png"
@@ -669,7 +701,7 @@ class TubeGrabApp:
 
         grid_section = tk.Frame(page, background=palette.content)
         grid_section.grid(row=2, column=0, sticky="ew", pady=(0, 22))
-        grid_section.columnconfigure(0, weight=0, minsize=360)
+        grid_section.columnconfigure(0, weight=0, minsize=440)
         grid_section.columnconfigure(1, weight=1)
         grid_section.rowconfigure(0, weight=1)
 
@@ -683,7 +715,7 @@ class TubeGrabApp:
             font=fonts.section,
         ).pack(anchor="w", padx=4, pady=(0, 6))
 
-        options_card = Card(options_column, padding=(0, 0), background=palette.content)
+        options_card = Card(options_column, padding=(2, 2), background=palette.content)
         options_card.pack(fill="x")
         options = options_card.body
         options.columnconfigure(0, weight=1)
@@ -767,6 +799,7 @@ class TubeGrabApp:
             foreground=palette.text2,
             insertbackground=palette.text,
             font=fonts.small,
+            width=6,
         )
         self.folder_entry.grid(row=0, column=1, sticky="ew")
         self.browse_button = RoundedButton(
@@ -791,7 +824,7 @@ class TubeGrabApp:
             options_column,
             text="",
             style="Muted.TLabel",
-            wraplength=340,
+            wraplength=390,
             justify="left",
         )
         self.quality_note.pack(anchor="w", padx=6, pady=(7, 0))
@@ -830,13 +863,7 @@ class TubeGrabApp:
             borderwidth=0,
             highlightthickness=0,
         )
-        glyph.create_polygon(
-            [0, 14, 0, 0, 14, 0, 42, 0, 56, 0, 56, 14, 56, 42, 56, 56, 42, 56, 14, 56, 0, 56, 0, 42],
-            smooth=True,
-            splinesteps=24,
-            fill=palette.fill,
-            outline="",
-        )
+        draw_round_rect(glyph, 0, 0, 56, 56, 14, fill=palette.fill, background=palette.card)
         glyph.create_image(28, 28, image=load_icon("play"))
         glyph.pack(pady=(0, 12))
         tk.Label(
@@ -958,12 +985,13 @@ class TubeGrabApp:
         )
         self.clear_button.grid(row=0, column=1, sticky="e")
 
-        self.queue_card = Card(queue_section, padding=(0, 0), background=palette.content)
+        self.queue_card = Card(queue_section, padding=(2, 2), background=palette.content)
         self.queue_card.grid(row=1, column=0, sticky="ew")
         self.queue_view = QueueView(
             self.queue_card.body,
             on_cancel=self._cancel_job,
             on_retry=self._retry_job,
+            on_restart=self._restart_job,
             on_remove=self._remove_job,
             on_open=self._open_job_folder,
         )
@@ -1398,6 +1426,10 @@ class TubeGrabApp:
     def _retry_job(self, job_id: str) -> None:
         if self.queue_manager is not None:
             self.queue_manager.retry(job_id)
+
+    def _restart_job(self, job_id: str) -> None:
+        if self.queue_manager is not None:
+            self.queue_manager.retry(job_id, restart=True)
 
     def _remove_job(self, job_id: str) -> None:
         if self.queue_manager is not None:

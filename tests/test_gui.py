@@ -48,7 +48,16 @@ class SlowFakeService:
             time.sleep(0.01)
         return MediaInfo(url=url, title="GUI test video")
 
-    def download(self, url, mode, quality, output_dir, handle, on_progress=None) -> DownloadResult:
+    def download(
+        self,
+        url,
+        mode,
+        quality,
+        output_dir,
+        handle,
+        on_progress=None,
+        restart=False,
+    ) -> DownloadResult:
         self.download_calls += 1
         if self.fail_next:
             self.fail_next = False

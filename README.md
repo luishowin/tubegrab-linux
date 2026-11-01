@@ -19,7 +19,8 @@ to save. Respect the source site's terms and applicable copyright law.
 - Explicit metadata preview: title, thumbnail, duration, uploader/channel, resolutions, and audio
   formats (no video download is performed for previews).
 - Sequential download queue: add more links while one is downloading, cancel the active item,
-  retry failed/cancelled items, remove queued/completed items, and clear finished rows.
+  retry failed/cancelled items (resume or start over), remove queued/completed items, and clear
+  finished rows.
 - Video quality selection: best available, 2160p, 1440p, 1080p, 720p, 480p, 360p, 240p, or 144p. The selector
   always falls back to the best format at or below the selected height.
 - Separate best video/audio streams are merged into MKV without re-encoding. A combined source
@@ -55,12 +56,13 @@ Notes:
 
 - `python3-tkinter` provides Tkinter for Fedora's system Python. If you use a pyenv/mise/conda
   Python instead, make sure that interpreter can import `tkinter`; the installer looks for a working
-  interpreter automatically. You can point it at one explicitly with `TUBEGRAB_PYTHON`.
+  interpreter automatically and prefers one whose Tk uses Xft, so text is antialiased. You can point
+  it at a specific interpreter with `TUBEGRAB_PYTHON`.
 - Fedora's `ffmpeg-free` build is sufficient for normal merging and MP3 conversion. If a particular
   codec is unavailable, install the full FFmpeg package from a trusted repository such as RPM Fusion.
 - yt-dlp changes frequently. Update it with `sudo dnf upgrade yt-dlp` (or however you installed it).
-  If yt-dlp logs a warning about a missing JavaScript runtime, see the yt-dlp documentation; this is
-  a yt-dlp/YouTube extraction concern, not a TubeGrab requirement.
+  A JavaScript runtime (Node.js, Deno, or Bun) is optional but recommended for YouTube extraction;
+  TubeGrab auto-detects one and passes it to yt-dlp.
 
 ## Install
 
@@ -232,7 +234,7 @@ part of the automated suite; metadata and download behavior depends on the sourc
 | `FFmpeg was not found` | `sudo dnf install ffmpeg-free`. Video merging and MP3 conversion need it. Original audio may still work. |
 | Private, age-restricted, or "confirm you're not a bot" | TubeGrab does not bypass sign-in, age gates, DRM, or bot checks. Use a lawful source you can access. |
 | Unsupported URL | The site is not supported by the installed yt-dlp version. Update yt-dlp or use a supported source. |
-| Network or timeout errors | Check your connection and retry the queue item. Partial files from failed attempts are kept for resume; cancelled items are cleaned up. |
+| Network or timeout errors | Check your connection and retry the queue item. Partial files from failed attempts are kept for **Retry**; use **Start over** to discard a corrupt partial and download again. Cancelled items are cleaned up. |
 | MP3 or a codec conversion fails | Your FFmpeg build may lack the codec. Try full FFmpeg from a trusted third-party repository, or choose **Audio · original**. |
 | yt-dlp warns about a missing JavaScript runtime | See the current yt-dlp documentation. Some YouTube formats may be unavailable without a supported JS runtime; TubeGrab passes yt-dlp's normal options and does not bypass access controls. |
 | App does not appear in the GNOME grid | Run `./install.sh` again, check `~/.local/share/applications/tubegrab.desktop`, and make sure the desktop database refresh tools are available. Log out and back in if necessary. |
