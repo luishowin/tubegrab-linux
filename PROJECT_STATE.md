@@ -4,7 +4,7 @@ _Last updated: 2026-11-02_
 
 ## Current state
 
-- Branch: `feature/apple-ui` (local; not pushed)
+- Branch: `main` (merged from `feature/apple-ui`)
 - Version: `1.2.0`
 - Base: `main` at the 1.1.1 release commit
 - Interface: Apple-inspired light/dark Tkinter UI with antialiased canvas surfaces
@@ -38,7 +38,6 @@ _Last updated: 2026-11-02_
 
 ## Open items
 
-- Push `feature/apple-ui` or open a pull request when approved.
 - No RPM binary is committed; `dist/` stays local and git-ignored.
 - The existing corrupt `.part` file in `~/Videos` must be discarded via **Start over** or manually.
 - Native GNOME title bar is intentionally retained; no custom traffic lights.

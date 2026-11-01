@@ -40,7 +40,7 @@ to save. Respect the source site's terms and applicable copyright law.
 
 ## Project status
 
-- Version **1.2.0** on the `feature/apple-ui` branch.
+- Version **1.2.0** on `main`.
 - 62 automated tests; the GUI smoke tests run when a display is available.
 - Fedora `noarch` RPM is built with `./packaging/build-rpm.sh`.
 - Larger design/build notes: [PROJECT_STATE.md](PROJECT_STATE.md) and [BUILD-NOTES.txt](BUILD-NOTES.txt).

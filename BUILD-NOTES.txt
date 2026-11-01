@@ -1,7 +1,7 @@
 TubeGrab UI/build notes
 =======================
 Last updated: 2026-11-02
-Branch: feature/apple-ui
+Branch: main
 Version: 1.2.0
 
 Purpose
