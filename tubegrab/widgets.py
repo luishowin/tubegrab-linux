@@ -65,6 +65,7 @@ def _corner_tiles(
     fill: str,
     border: str,
     background: str,
+    border_width: int = 1,
 ) -> dict[str, tk.PhotoImage]:
     """Render four opaque, antialiased corner tiles for a rounded surface.
 
@@ -74,10 +75,11 @@ def _corner_tiles(
     """
 
     radius = max(2, int(radius))
+    border_width = max(1, min(int(border_width), radius - 1))
     fill = _color(fill)
     border = _color(border) if border else fill
     background = _color(background)
-    key = (radius, fill, border, background)
+    key = (radius, fill, border, background, border_width)
     cache = _tile_cache()
     cached = cache.get(key)
     if cached is not None:
@@ -107,7 +109,7 @@ def _corner_tiles(
                         for sx in range(samples):
                             px = x + (sx + 0.5) / samples
                             distance = math.hypot(px - center_x, py - center_y)
-                            if distance <= radius - 1:
+                            if distance <= radius - border_width:
                                 fill_coverage += 1
                             elif distance <= radius:
                                 border_coverage += 1
@@ -159,15 +161,22 @@ def draw_round_rect(
     canvas.create_rectangle(x1, y1 + radius, x2, y2 - radius, fill=fill, outline="", tags=tags)
     if outline:
         line_width = max(1, int(round(width)))
+        offset = line_width // 2
         for start, end in (
-            ((x1 + radius, y1), (x2 - radius, y1)),
-            ((x1 + radius, y2), (x2 - radius, y2)),
-            ((x1, y1 + radius), (x1, y2 - radius)),
-            ((x2, y1 + radius), (x2, y2 - radius)),
+            ((x1 + radius - 1, y1 + offset), (x2 - radius + 1, y1 + offset)),
+            ((x1 + radius - 1, y2 - offset), (x2 - radius + 1, y2 - offset)),
+            ((x1 + offset, y1 + radius - 1), (x1 + offset, y2 - radius + 1)),
+            ((x2 - offset, y1 + radius - 1), (x2 - offset, y2 - radius + 1)),
         ):
             canvas.create_line(*start, *end, fill=outline, width=line_width, tags=tags)
     if corners:
-        tiles = _corner_tiles(radius, fill or background, outline or fill or background, background)
+        tiles = _corner_tiles(
+            radius,
+            fill or background,
+            outline or fill or background,
+            background,
+            max(1, int(round(width))),
+        )
         canvas.create_image(x1, y1, anchor="nw", image=tiles["nw"], tags=tags)
         canvas.create_image(x2 - radius, y1, anchor="nw", image=tiles["ne"], tags=tags)
         canvas.create_image(x1, y2 - radius, anchor="nw", image=tiles["sw"], tags=tags)
@@ -306,7 +315,7 @@ _BUTTON_STYLES: dict[str, dict[str, Any]] = {
         "hover": "accent_hover",
         "pressed": "accent_pressed",
         "foreground": "#ffffff",
-        "foreground_disabled": "#ffffff",
+        "foreground_disabled": "text2",
         "border": "",
         "height": 44,
         "radius": 11,
@@ -513,31 +522,22 @@ class RoundedButton(tk.Canvas):
                 elif self._hovered:
                     fill_name = spec["hover"] or background_name
             if disabled and self._style == "primary":
-                fill = _mix(palette.accent, palette.content, 0.55)
+                fill = _color("fill")
             else:
                 fill = _color(fill_name)
             border = _color(spec["border"]) if spec["border"] else ""
             if disabled and self._style == "secondary":
                 fill = _color("content")
-            if self._focused and self._style != "link":
+            if self._focused and not disabled and self._style != "link":
                 draw_round_rect(
                     self,
-                    0,
-                    0,
-                    width,
-                    height,
-                    spec["radius"] + 1,
-                    fill=palette.accent,
-                )
-                draw_round_rect(
-                    self,
-                    2,
-                    2,
-                    width - 2,
-                    height - 2,
-                    max(2, spec["radius"] - 1),
+                    1,
+                    1,
+                    width - 1,
+                    height - 1,
+                    spec["radius"],
                     fill=fill,
-                    outline=border,
+                    outline=palette.accent,
                 )
             else:
                 draw_round_rect(
@@ -552,6 +552,7 @@ class RoundedButton(tk.Canvas):
                 height - 1,
                 spec["radius"] or 7,
                 fill=palette.accent_soft,
+                outline=palette.accent,
             )
         elif self._hovered and not disabled and spec["hover"] is not None:
             draw_round_rect(
@@ -676,7 +677,17 @@ class SegmentedControl(tk.Canvas):
         draw_round_rect(self, 1, 1, width - 1, height - 1, 9, fill=palette.seg_track)
         selected = self._selected_index()
         x1, x2 = self._segment_bounds(selected)
-        draw_round_rect(self, x1, 3, x2, height - 3, 7, fill=palette.seg_thumb, outline=palette.card_border)
+        draw_round_rect(
+            self,
+            x1,
+            3,
+            x2,
+            height - 3,
+            7,
+            fill=palette.seg_thumb,
+            outline=palette.card_border,
+            background=palette.seg_track,
+        )
         for index, (_value, label) in enumerate(self._segments):
             left, right = self._segment_bounds(index)
             self.create_text(
@@ -753,7 +764,7 @@ class PopupSelect(tk.Canvas):
         self._trace = variable.trace_add("write", lambda *_args: self._draw())
         self.bind("<Enter>", lambda _event: self._set_hover(True))
         self.bind("<Leave>", lambda _event: self._set_hover(False))
-        self.bind("<Button-1>", self._open_menu)
+        self.bind("<ButtonRelease-1>", self._open_menu)
         self.bind("<space>", self._open_menu)
         self.bind("<Return>", self._open_menu)
         self._draw()
@@ -772,7 +783,16 @@ class PopupSelect(tk.Canvas):
             font=self._font,
         )
         chevron_left = self._width - 23
-        draw_round_rect(self, chevron_left, 3, self._width - 3, self._height - 3, 5, fill=palette.accent)
+        draw_round_rect(
+            self,
+            chevron_left,
+            3,
+            self._width - 3,
+            self._height - 3,
+            5,
+            fill=palette.accent,
+            background=fill,
+        )
         if self._chevron is not None:
             self.create_image((chevron_left + self._width - 3) / 2, self._height / 2, image=self._chevron)
         else:
@@ -789,8 +809,12 @@ class PopupSelect(tk.Canvas):
         self._draw()
 
     def _open_menu(self, event: tk.Event) -> str:
+        self.focus_set()
         try:
-            self._menu.tk_popup(event.x_root, event.y_root)
+            self._menu.tk_popup(
+                self.winfo_rootx(),
+                self.winfo_rooty() + self._height,
+            )
         finally:
             self._menu.grab_release()
         return "break"
@@ -872,40 +896,17 @@ class SearchField(tk.Canvas):
         width = max(40, self.winfo_width())
         height = self._height
         self.delete("surface")
-        if self._focused:
-            draw_round_rect(
-                self,
-                0,
-                0,
-                width,
-                height,
-                12,
-                fill=palette.accent_soft,
-                tags="surface",
-            )
-            draw_round_rect(
-                self,
-                2,
-                2,
-                width - 2,
-                height - 2,
-                10,
-                fill=palette.field,
-                outline=palette.field_focus,
-                tags="surface",
-            )
-        else:
-            draw_round_rect(
-                self,
-                1,
-                1,
-                width - 1,
-                height - 1,
-                11,
-                fill=palette.field,
-                outline=palette.field_border,
-                tags="surface",
-            )
+        draw_round_rect(
+            self,
+            1,
+            1,
+            width - 1,
+            height - 1,
+            11,
+            fill=palette.field,
+            outline=palette.field_focus if self._focused else palette.field_border,
+            tags="surface",
+        )
         if self._icon is not None:
             self.create_image(24, height / 2, image=self._icon, tags="surface")
         accessory_width = 0
@@ -988,11 +989,29 @@ class ThinProgress(tk.Canvas):
             x1 = max(0, start)
             x2 = min(width, start + segment)
             if x2 > x1:
-                draw_round_rect(self, x1, 0, x2, 4, 2, fill=palette.accent)
+                draw_round_rect(
+                    self,
+                    x1,
+                    0,
+                    x2,
+                    4,
+                    2,
+                    fill=palette.accent,
+                    background=palette.fill,
+                )
         else:
             filled = width * self._value / 100.0
             if filled > 1:
-                draw_round_rect(self, 0, 0, filled, 4, 2, fill=palette.accent)
+                draw_round_rect(
+                    self,
+                    0,
+                    0,
+                    filled,
+                    4,
+                    2,
+                    fill=palette.accent,
+                    background=palette.fill,
+                )
 
     def _on_destroy(self, _event: tk.Event) -> None:
         if self._after is not None:
@@ -1074,6 +1093,8 @@ class ScrollFrame(tk.Frame):
         except tk.TclError:
             return
         if needed == self._scrollbar_visible:
+            if not needed:
+                self.canvas.yview_moveto(0)
             return
         self._scrollbar_visible = needed
         if needed:
@@ -1083,6 +1104,8 @@ class ScrollFrame(tk.Frame):
             self.scrollbar.grid_remove()
 
     def _on_wheel(self, event: tk.Event) -> None:
+        if not self._scrollbar_visible:
+            return
         try:
             under_pointer = self.canvas.winfo_containing(event.x_root, event.y_root)
         except tk.TclError:

@@ -40,7 +40,6 @@ from .widgets import (
     ScrollFrame,
     SearchField,
     SegmentedControl,
-    StatusDot,
     ThinProgress,
     draw_round_rect,
     load_icon,
@@ -539,6 +538,7 @@ class TubeGrabApp:
         self.folder_var = tk.StringVar(value=self.config.output_dir)
         self.status_var = tk.StringVar(value="Ready")
         self.preview_title_var = tk.StringVar(value="No preview yet")
+        self._preview_full_title = "No preview yet"
         self.preview_meta_var = tk.StringVar(value="Paste a link and choose Preview.")
         self.preview_res_var = tk.StringVar(value="")
         self.preview_audio_var = tk.StringVar(value="")
@@ -590,34 +590,10 @@ class TubeGrabApp:
         fonts = self.fonts
         root = self.root
         root.columnconfigure(0, weight=1)
-        root.rowconfigure(1, weight=1)
+        root.rowconfigure(0, weight=1)
 
-        toolbar = tk.Frame(root, background=palette.content, height=52)
-        toolbar.grid(row=0, column=0, sticky="ew")
-        toolbar.grid_propagate(False)
-        tk.Label(
-            toolbar,
-            text=APP_NAME,
-            background=palette.content,
-            foreground=palette.text,
-            font=fonts.title,
-        ).pack(side="left", padx=(20, 0))
-        self.toolbar_open_button = RoundedButton(
-            toolbar,
-            image=load_icon("folder"),
-            style="ghost",
-            background=palette.content,
-            width=32,
-            height=28,
-            command=self._open_folder,
-        )
-        self.toolbar_open_button.pack(side="right", padx=(0, 14))
-        tk.Frame(toolbar, height=1, background=palette.sep).place(
-            relx=0, rely=1, relwidth=1, anchor="sw"
-        )
-
-        self.page = ScrollFrame(root, background=palette.content, padding=(24, 18))
-        self.page.grid(row=1, column=0, sticky="nsew")
+        self.page = ScrollFrame(root, background=palette.content, padding=(24, 14))
+        self.page.grid(row=0, column=0, sticky="nsew")
         page = self.page.inner
         page.columnconfigure(0, weight=1)
 
@@ -636,7 +612,7 @@ class TubeGrabApp:
         )
 
         link_section = tk.Frame(page, background=palette.content)
-        link_section.grid(row=1, column=0, sticky="ew", pady=(0, 22))
+        link_section.grid(row=1, column=0, sticky="ew", pady=(0, 18))
         link_section.columnconfigure(0, weight=1)
 
         url_row = tk.Frame(link_section, background=palette.content)
@@ -700,7 +676,7 @@ class TubeGrabApp:
         self.input_error_label.grid_remove()
 
         grid_section = tk.Frame(page, background=palette.content)
-        grid_section.grid(row=2, column=0, sticky="ew", pady=(0, 22))
+        grid_section.grid(row=2, column=0, sticky="ew", pady=(0, 18))
         grid_section.columnconfigure(0, weight=0, minsize=440)
         grid_section.columnconfigure(1, weight=1)
         grid_section.rowconfigure(0, weight=1)
@@ -821,13 +797,13 @@ class TubeGrabApp:
         self.open_folder_button.grid(row=0, column=3, padx=(2, 0))
 
         self.quality_note = ttk.Label(
-            options_column,
+            grid_section,
             text="",
             style="Muted.TLabel",
-            wraplength=390,
+            wraplength=880,
             justify="left",
         )
-        self.quality_note.pack(anchor="w", padx=6, pady=(7, 0))
+        self.quality_note.grid(row=1, column=0, columnspan=2, sticky="w", padx=4, pady=(7, 0))
 
         preview_column = tk.Frame(grid_section, background=palette.content)
         preview_column.grid(row=0, column=1, sticky="nsew")
@@ -839,15 +815,15 @@ class TubeGrabApp:
             font=fonts.section,
         ).pack(anchor="w", padx=4, pady=(0, 6))
 
-        preview_card = Card(
+        self.preview_card = Card(
             preview_column,
             padding=(16, 16),
-            autosize=True,
-            min_height=250,
+            autosize=False,
+            height=1,
             background=palette.content,
         )
-        preview_card.pack(fill="x")
-        preview_body = preview_card.body
+        self.preview_card.pack(fill="both", expand=True)
+        preview_body = self.preview_card.body
         preview_body.columnconfigure(0, weight=1)
         preview_body.rowconfigure(0, weight=1)
 
@@ -884,84 +860,92 @@ class TubeGrabApp:
         self.preview_detail = tk.Frame(preview_body, background=palette.card)
         self.preview_detail.grid(row=0, column=0, sticky="nsew")
         self.preview_detail.grid_remove()
-        self.preview_detail.columnconfigure(0, weight=1)
-        self.preview_detail.rowconfigure(6, weight=1)
+        self.preview_detail.columnconfigure(1, weight=1)
 
         self.thumb_box = tk.Frame(
             self.preview_detail,
-            background=palette.thumb_bottom,
-            width=320,
-            height=180,
+            background=palette.fill,
+            width=160,
+            height=90,
         )
-        self.thumb_box.grid(row=0, column=0, sticky="w", pady=(0, 12))
+        self.thumb_box.grid(row=0, column=0, sticky="nw", padx=(0, 14))
         self.thumb_box.grid_propagate(False)
         self.thumb_label = tk.Label(
             self.thumb_box,
             text="No preview",
-            background=palette.thumb_bottom,
-            foreground="#ffffff",
+            background=palette.fill,
+            foreground=palette.text2,
             font=fonts.small,
         )
         self.thumb_label.pack(fill="both", expand=True)
 
-        self.preview_title = ttk.Label(
-            self.preview_detail,
+        preview_text = tk.Frame(self.preview_detail, background=palette.card)
+        preview_text.grid(row=0, column=1, sticky="nsew")
+        preview_text.columnconfigure(0, weight=1)
+
+        self.preview_title = tk.Label(
+            preview_text,
             textvariable=self.preview_title_var,
-            style="QueueTitle.TLabel",
+            background=palette.card,
+            foreground=palette.text,
+            font=fonts.base_bold,
             anchor="w",
             justify="left",
-            wraplength=420,
+            wraplength=320,
+            height=2,
         )
-        self.preview_title.grid(row=1, column=0, sticky="w")
-        self.preview_meta = ttk.Label(
-            self.preview_detail,
+        self.preview_title.grid(row=0, column=0, sticky="ew")
+        self.preview_meta = tk.Label(
+            preview_text,
             textvariable=self.preview_meta_var,
-            style="QueueMuted.TLabel",
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
             anchor="w",
             justify="left",
-            wraplength=420,
+            height=1,
         )
-        self.preview_meta.grid(row=2, column=0, sticky="w", pady=(3, 0))
-        self.preview_res = ttk.Label(
-            self.preview_detail,
+        self.preview_meta.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        self.preview_res = tk.Label(
+            preview_text,
             textvariable=self.preview_res_var,
-            style="QueueMuted.TLabel",
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
             anchor="w",
             justify="left",
-            wraplength=420,
+            height=1,
         )
-        self.preview_res.grid(row=3, column=0, sticky="w", pady=(8, 0))
-        self.preview_audio = ttk.Label(
-            self.preview_detail,
+        self.preview_res.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        self.preview_audio = tk.Label(
+            preview_text,
             textvariable=self.preview_audio_var,
-            style="QueueMuted.TLabel",
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
             anchor="w",
             justify="left",
-            wraplength=420,
+            height=1,
         )
-        self.preview_audio.grid(row=4, column=0, sticky="w", pady=(3, 0))
-        self.preview_status = ttk.Label(
-            self.preview_detail,
+        self.preview_audio.grid(row=3, column=0, sticky="ew", pady=(2, 0))
+        self.preview_status = tk.Label(
+            preview_text,
             textvariable=self.preview_status_var,
-            style="QueueError.TLabel",
+            background=palette.card,
+            foreground=palette.red,
+            font=fonts.small,
             anchor="w",
             justify="left",
-            wraplength=420,
+            height=1,
         )
-        self.preview_status.grid(row=5, column=0, sticky="w", pady=(8, 0))
+        self.preview_status.grid(row=4, column=0, sticky="ew", pady=(4, 0))
+        self.preview_status.grid_remove()
 
         def resize_preview(event: tk.Event) -> None:
-            wrap = max(180, event.width - 4)
-            for label in (
-                self.preview_title,
-                self.preview_meta,
-                self.preview_res,
-                self.preview_audio,
-                self.preview_status,
-            ):
-                label.configure(wraplength=wrap)
+            self.preview_title.configure(wraplength=max(140, event.width - 4))
+            self._refresh_preview_title(max(140, event.width - 4))
 
-        self.preview_detail.bind("<Configure>", resize_preview)
+        preview_text.bind("<Configure>", resize_preview)
 
         queue_section = tk.Frame(page, background=palette.content)
         queue_section.grid(row=3, column=0, sticky="ew")
@@ -997,21 +981,21 @@ class TubeGrabApp:
         )
         self.queue_view.pack(fill="x")
 
-        status = tk.Frame(root, background=palette.content, height=34)
-        status.grid(row=2, column=0, sticky="ew")
+        status = tk.Frame(root, background=palette.content, height=30)
+        status.grid(row=1, column=0, sticky="ew")
         status.grid_propagate(False)
         tk.Frame(status, height=1, background=palette.sep).place(
             relx=0, rely=0, relwidth=1, anchor="nw"
         )
-        StatusDot(status, background=palette.content).pack(side="left", padx=(20, 6))
-        tk.Label(
+        self.status_label = tk.Label(
             status,
             textvariable=self.status_var,
             background=palette.content,
             foreground=palette.text2,
             font=fonts.small,
             anchor="w",
-        ).pack(side="left")
+        )
+        self.status_label.pack_forget()
         self.details_button = RoundedButton(
             status,
             "Details",
@@ -1081,6 +1065,33 @@ class TubeGrabApp:
         self.preview_empty.grid_remove()
         self.preview_detail.grid()
 
+    def _refresh_preview_title(self, width: int | None = None) -> None:
+        if width is None:
+            parent = self.preview_title.master
+            width = max(140, (parent.winfo_width() or self.preview_title.winfo_width()) - 4)
+        words = (self._preview_full_title or "").split()
+        if not words:
+            self.preview_title_var.set("")
+            return
+        lines: list[str] = []
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if not current or self.fonts.base_bold.measure(candidate) <= width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        if len(lines) <= 2:
+            self.preview_title_var.set("\n".join(lines))
+            return
+        second = lines[1]
+        while second and self.fonts.base_bold.measure(second + "…") > width and " " in second:
+            second = second.rsplit(" ", 1)[0]
+        self.preview_title_var.set(lines[0] + "\n" + second.rstrip(" ,.;:") + "…")
+
     # --------------------------------------------------------------- appearance
 
     def _update_dependency_banner(self) -> None:
@@ -1131,7 +1142,11 @@ class TubeGrabApp:
     def _update_action_states(self) -> None:
         has_url = bool(self.url_var.get().strip())
         available = self.dependencies.has_ytdlp
-        self.download_button.configure(state="normal" if has_url and available else "disabled")
+        can_download = has_url and available
+        self.download_button.configure(
+            state="normal" if can_download else "disabled",
+            image=load_icon("download") if can_download else load_icon("download-muted"),
+        )
         self.preview_button.configure(
             state="normal" if has_url and available and self.preview_handle is None else "disabled"
         )
@@ -1139,7 +1154,6 @@ class TubeGrabApp:
         can_open = folder is not None and folder_is_usable(folder)
         self.status_open_button.configure(state="normal" if can_open else "disabled")
         self.open_folder_button.configure(state="normal" if can_open else "disabled")
-        self.toolbar_open_button.configure(state="normal" if can_open else "disabled")
 
     def _current_folder(self) -> Path | None:
         raw = self.folder_var.get().strip()
@@ -1223,12 +1237,15 @@ class TubeGrabApp:
         self.preview_handle = handle
         self.preview_request_url = url
         self.preview_status_var.set("")
-        self.preview_title_var.set("Fetching information…")
-        self.preview_meta_var.set(url)
+        self.preview_status.grid_remove()
+        self._preview_full_title = "Fetching information…"
+        self._refresh_preview_title()
+        self.preview_meta_var.set(truncate_text(url, 34))
         self.preview_res_var.set("")
         self.preview_audio_var.set("")
         self.preview_button.configure(text="Fetching…", state="disabled")
         self._show_preview_detail()
+        self.root.after_idle(self._refresh_preview_title)
         self.logger.info("Preview requested for %s", url)
 
         thread = threading.Thread(
@@ -1279,7 +1296,9 @@ class TubeGrabApp:
         self._show_preview_detail()
         if not info.thumbnail_url:
             self.thumb_label.configure(image="", text="No preview")
-        self.preview_title_var.set(info.display_title)
+        self._preview_full_title = info.display_title
+        self._refresh_preview_title()
+        self.root.after_idle(self._refresh_preview_title)
         details = []
         if info.uploader:
             details.append(info.uploader)
@@ -1287,11 +1306,13 @@ class TubeGrabApp:
             details.append(format_duration(info.duration))
         if info.extractor:
             details.append(info.extractor.replace("Youtube", "YouTube"))
-        self.preview_meta_var.set("  ·  ".join(details) if details else "Information from the site")
+        meta = "  ·  ".join(details) if details else "Information from the site"
+        self.preview_meta_var.set(truncate_text(meta, 34))
         summary = info.summary
-        self.preview_res_var.set(f"Video: {summary.resolution_text}")
-        self.preview_audio_var.set(f"Audio: {summary.audio_text}")
+        self.preview_res_var.set(truncate_text(f"Video: {summary.resolution_text}", 34))
+        self.preview_audio_var.set(truncate_text(f"Audio: {summary.audio_text}", 34))
         self.preview_status_var.set("")
+        self.preview_status.grid_remove()
         self.logger.info("Preview ready: %s", info.display_title)
 
     def _handle_preview_thumb(self, generation: int, path: Path | None) -> None:
@@ -1304,7 +1325,8 @@ class TubeGrabApp:
             image = tk.PhotoImage(file=str(path))
             if self.preview_url:
                 self._job_thumbnails[self.preview_url] = image
-            self._thumb_photo = image.subsample(2, 2)
+            factor = max(1, (image.width() + 159) // 160, (image.height() + 89) // 90)
+            self._thumb_photo = image.subsample(factor, factor)
             self.thumb_label.configure(image=self._thumb_photo, text="")
         except tk.TclError:
             self.logger.warning("Could not display thumbnail %s", path, exc_info=True)
@@ -1320,9 +1342,11 @@ class TubeGrabApp:
         self.preview_button.configure(text="Preview", state="normal")
         self._clear_preview()
         self._show_preview_detail()
-        self.preview_title_var.set("Preview unavailable")
+        self._preview_full_title = "Preview unavailable"
+        self._refresh_preview_title()
         self.preview_meta_var.set("")
-        self.preview_status_var.set(message)
+        self.preview_status_var.set(truncate_text(message, 60))
+        self.preview_status.grid()
         self._update_action_states()
 
     def _cancel_preview(self) -> None:
@@ -1340,11 +1364,13 @@ class TubeGrabApp:
         self.preview_url = None
         self._thumb_photo = None
         self.thumb_label.configure(image="", text="No preview")
-        self.preview_title_var.set("No preview yet")
+        self._preview_full_title = "No preview yet"
+        self._refresh_preview_title()
         self.preview_meta_var.set("Paste a link and choose Preview.")
         self.preview_res_var.set("")
         self.preview_audio_var.set("")
         self.preview_status_var.set("")
+        self.preview_status.grid_remove()
         self._show_preview_empty()
 
     # -------------------------------------------------------------- downloading
@@ -1468,7 +1494,15 @@ class TubeGrabApp:
             self.status_var.set("Ready")
         else:
             self.status_var.set("yt-dlp is not installed")
+        self._update_status_visibility()
         self._update_action_states()
+
+    def _update_status_visibility(self) -> None:
+        text = self.status_var.get().strip()
+        if not text or text.startswith("Ready"):
+            self.status_label.pack_forget()
+        elif not self.status_label.winfo_ismapped():
+            self.status_label.pack(side="left", padx=(20, 0))
 
     def _poll_events(self) -> None:
         if self._closing:
