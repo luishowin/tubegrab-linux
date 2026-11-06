@@ -149,16 +149,27 @@ class GuiSmokeTests(unittest.TestCase):
             time.sleep(0.01)
         self.assertEqual(self.app.queue_manager.snapshot()[0].status.value, "cancelled")
 
-    def test_details_window_and_input_error(self) -> None:
-        self.app._show_details()
-        self.root.update()
-        self.assertIsNotNone(self.app._log_window)
-        self.app._close_details()
-        self.root.update()
-        self.assertIsNone(self.app._log_window)
+    def test_input_error_is_shown(self) -> None:
         self.app._show_input_error("A friendly error")
         self.root.update()
         self.assertEqual(self.app.input_error_var.get(), "A friendly error")
+
+    def test_page_margins_stay_fixed_when_resizing(self) -> None:
+        self.root.deiconify()
+        for geometry, expected_width in (("900x620", 900), ("1500x900", 1500)):
+            self.root.geometry(geometry)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                self.root.update()
+                if self.app.page.canvas.winfo_width() == expected_width:
+                    break
+                time.sleep(0.01)
+            self.root.update_idletasks()
+            self.assertEqual(self.app.page.canvas.winfo_width(), expected_width)
+            self.assertEqual(self.app.page.canvas.canvasx(0), 0.0)
+            self.assertEqual(self.app.page.canvas.canvasy(0), 0.0)
+            self.assertEqual(self.app.page.inner.winfo_x(), 24)
+            self.assertEqual(self.app.page.inner.winfo_y(), 24)
 
     def test_retry_button_requeues_failed_item(self) -> None:
         self.app.url_var.set("https://example.com/watch?v=retry")

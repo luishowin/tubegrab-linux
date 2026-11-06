@@ -1,6 +1,6 @@
 TubeGrab UI/build notes
 =======================
-Last updated: 2026-11-02
+Last updated: 2026-11-06
 Branch: main
 Version: 1.2.0
 
@@ -231,3 +231,26 @@ The RPM is a noarch package and requires python3-tkinter, yt-dlp, and
   ordinary focus/keyboard behaviour.
 - Text quality depends on the interpreter's Tk/Xft build.
 - Wayland fractional scaling may affect screenshot-based pixel inspection.
+
+13. Tk 9 centres undersized scroll regions
+------------------------------------------
+Symptom:
+  After the first window resize, the page padding collapsed to zero on the
+  left and did not come back when the window grew again. The top padding was
+  also never visible.
+
+Cause:
+  ScrollFrame used bbox("all") as its scrollregion, and that rectangle starts
+  at the padding offset, e.g. (24, 14). Tk 9 centres a scrollregion that is
+  smaller than the viewport, so canvasx(0) became 24 and cancelled the left
+  padding. yview_moveto(0) put the viewport top at y=14, hiding the top padding.
+
+Fix:
+  Build the scrollregion explicitly as
+    (0, 0, max(canvas width, bbox right), max(canvas height, bbox bottom))
+  and recompute it in both the inner and canvas <Configure> handlers.
+
+Rule:
+  Never use bbox("all") directly as the scrollregion when the inner window is
+  inset by padding. Anchor the region at (0, 0) and make it at least as large
+  as the viewport.

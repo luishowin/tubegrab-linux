@@ -503,9 +503,6 @@ class TubeGrabApp:
         self._save_after: str | None = None
         self._poll_after: str | None = None
         self._focus_after: str | None = None
-        self._log_window: tk.Toplevel | None = None
-        self._log_text: tk.Text | None = None
-        self._log_after: str | None = None
         self._job_thumbnails: dict[str, tk.PhotoImage] = {}
 
         self.root.title(APP_NAME)
@@ -594,7 +591,7 @@ class TubeGrabApp:
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
 
-        self.page = ScrollFrame(root, background=palette.content, padding=(24, 14))
+        self.page = ScrollFrame(root, background=palette.content, padding=(24, 24))
         self.page.grid(row=0, column=0, sticky="nsew")
         page = self.page.inner
         page.columnconfigure(0, weight=1)
@@ -986,9 +983,6 @@ class TubeGrabApp:
         status = tk.Frame(root, background=palette.content, height=30)
         status.grid(row=1, column=0, sticky="ew")
         status.grid_propagate(False)
-        tk.Frame(status, height=1, background=palette.sep).place(
-            relx=0, rely=0, relwidth=1, anchor="nw"
-        )
         self.status_label = tk.Label(
             status,
             textvariable=self.status_var,
@@ -998,22 +992,6 @@ class TubeGrabApp:
             anchor="w",
         )
         self.status_label.pack_forget()
-        self.details_button = RoundedButton(
-            status,
-            "Details",
-            style="link",
-            background=palette.content,
-            command=self._show_details,
-        )
-        self.details_button.pack(side="right", padx=(0, 18))
-        self.status_open_button = RoundedButton(
-            status,
-            "Open Folder",
-            style="link",
-            background=palette.content,
-            command=self._open_folder,
-        )
-        self.status_open_button.pack(side="right", padx=(0, 16))
 
         self._narrow_url: bool | None = None
         self._narrow_grid: bool | None = None
@@ -1240,7 +1218,6 @@ class TubeGrabApp:
         )
         folder = self._current_folder()
         can_open = folder is not None and folder_is_usable(folder)
-        self.status_open_button.configure(state="normal" if can_open else "disabled")
         self.open_folder_button.configure(state="normal" if can_open else "disabled")
 
     def _current_folder(self) -> Path | None:
@@ -1675,146 +1652,6 @@ class TubeGrabApp:
         self._save_after = None
         save_config(self.paths.config_file, self._collect_config(), self.logger)
 
-    # ------------------------------------------------------------------- details
-
-    def _show_details(self) -> None:
-        if self._log_window is not None and self._log_window.winfo_exists():
-            self._log_window.deiconify()
-            self._log_window.lift()
-            self._refresh_log()
-            return
-
-        palette = self.palette
-        window = tk.Toplevel(self.root)
-        window.title(f"{APP_NAME} — Activity details")
-        window.geometry("780x460")
-        window.minsize(560, 300)
-        window.configure(background=palette.content)
-        window.transient(self.root)
-        if self._window_icon is not None:
-            try:
-                window.iconphoto(True, self._window_icon)
-            except tk.TclError:
-                pass
-        self._log_window = window
-
-        window.columnconfigure(0, weight=1)
-        window.rowconfigure(2, weight=1)
-        header = ttk.Frame(window, style="TFrame")
-        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 8))
-        header.columnconfigure(0, weight=1)
-        ttk.Label(header, text="Activity details", style="Section.TLabel").grid(
-            row=0, column=0, sticky="w"
-        )
-        log_path = str(self.log_state.log_file) if self.log_state.log_file else "not available"
-        ttk.Label(
-            header,
-            text=f"Diagnostic log: {log_path}",
-            style="Faint.TLabel",
-            wraplength=720,
-            justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(3, 0))
-
-        text_frame = ttk.Frame(window, style="TFrame")
-        text_frame.grid(row=2, column=0, sticky="nsew", padx=16)
-        text_frame.columnconfigure(0, weight=1)
-        text_frame.rowconfigure(0, weight=1)
-        text = tk.Text(
-            text_frame,
-            wrap="word",
-            background=palette.log_bg,
-            foreground=palette.log_text,
-            insertbackground=palette.text,
-            selectbackground=palette.selection,
-            selectforeground=palette.selection_text,
-            font=self.fonts.mono,
-            padx=10,
-            pady=8,
-            relief="flat",
-            borderwidth=0,
-            state="disabled",
-            height=10,
-        )
-        text.grid(row=0, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=text.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns", padx=(6, 0))
-        text.configure(yscrollcommand=scrollbar.set)
-        self._log_text = text
-
-        buttons = ttk.Frame(window, style="TFrame")
-        buttons.grid(row=3, column=0, sticky="ew", padx=16, pady=(10, 14))
-        buttons.columnconfigure(0, weight=1)
-        ttk.Button(buttons, text="Clear view", style="Ghost.TButton", command=self._clear_log_view).grid(
-            row=0, column=0, sticky="w"
-        )
-        ttk.Button(buttons, text="Copy", style="TButton", command=self._copy_log).grid(
-            row=0, column=1, padx=(8, 0)
-        )
-        ttk.Button(
-            buttons,
-            text="Open log file",
-            style="TButton",
-            command=self._open_log_file,
-        ).grid(row=0, column=2, padx=(8, 0))
-        ttk.Button(buttons, text="Close", style="TButton", command=self._close_details).grid(
-            row=0, column=3, padx=(8, 0)
-        )
-
-        window.protocol("WM_DELETE_WINDOW", self._close_details)
-        self._refresh_log()
-        window.bind("<Escape>", lambda _event: self._close_details())
-
-    def _refresh_log(self) -> None:
-        if self._log_window is None or not self._log_window.winfo_exists():
-            return
-        if self._log_text is None:
-            return
-        if self._log_after is not None:
-            try:
-                self.root.after_cancel(self._log_after)
-            except tk.TclError:
-                pass
-            self._log_after = None
-        content = self.log_state.memory.text()
-        if not content:
-            content = "No activity yet."
-        self._log_text.configure(state="normal")
-        self._log_text.delete("1.0", "end")
-        self._log_text.insert("1.0", content + "\n")
-        self._log_text.see("end")
-        self._log_text.configure(state="disabled")
-        self._log_after = self.root.after(1000, self._refresh_log)
-
-    def _clear_log_view(self) -> None:
-        self.log_state.memory.clear()
-        self._refresh_log()
-
-    def _copy_log(self) -> None:
-        self.root.clipboard_clear()
-        self.root.clipboard_append(self.log_state.memory.text())
-
-    def _open_log_file(self) -> None:
-        path = self.log_state.log_file
-        if path is None or not path.exists():
-            self._show_input_error("The diagnostic log file is not available.")
-            return
-        ok, error = open_path(path)
-        if not ok:
-            self._show_input_error(f"Could not open the log file: {error}")
-
-    def _close_details(self) -> None:
-        if self._log_after is not None:
-            try:
-                self.root.after_cancel(self._log_after)
-            except tk.TclError:
-                pass
-            self._log_after = None
-        window = self._log_window
-        self._log_window = None
-        self._log_text = None
-        if window is not None and window.winfo_exists():
-            window.destroy()
-
     # ------------------------------------------------------------------- close
 
     def prefill_url(self, url: str) -> None:
@@ -1835,9 +1672,13 @@ class TubeGrabApp:
             exc_info=(exc_type, exc_value, exc_traceback),
         )
         try:
+            log_path = self.log_state.log_file
+            message = "An unexpected error occurred."
+            if log_path is not None:
+                message = f"{message} See the diagnostic log at {log_path}"
             messagebox.showerror(
                 APP_NAME,
-                "An unexpected error occurred. Open Details to see the diagnostic log.",
+                message,
                 parent=self.root,
             )
         except tk.TclError:
@@ -1877,11 +1718,6 @@ class TubeGrabApp:
         self._cancel_preview()
         if self.queue_manager is not None:
             self.queue_manager.shutdown(timeout=6.0)
-        if self._log_after is not None:
-            try:
-                self.root.after_cancel(self._log_after)
-            except tk.TclError:
-                pass
         try:
             self.root.destroy()
         except tk.TclError:

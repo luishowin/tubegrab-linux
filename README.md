@@ -35,13 +35,13 @@ to save. Respect the source site's terms and applicable copyright law.
 - Background workers for metadata, downloads, conversion, and thumbnails; the interface never
   blocks on those operations.
 - Cancellation terminates the whole yt-dlp/FFmpeg process group, not just the parent process.
-- Concise user-facing errors with full diagnostics in a separate Details window and a rotating log.
+- Concise user-facing errors with full diagnostics in a rotating log file.
 - Per-user GNOME application launcher and icon.
 
 ## Project status
 
 - Version **1.2.0** on `main`.
-- 62 automated tests; the GUI smoke tests run when a display is available.
+- 63 automated tests; the GUI smoke tests run when a display is available.
 - Fedora `noarch` RPM is built with `./packaging/build-rpm.sh`.
 - Larger design/build notes: [PROJECT_STATE.md](PROJECT_STATE.md) and [BUILD-NOTES.txt](BUILD-NOTES.txt).
 
@@ -141,8 +141,7 @@ you prefer a per-user installation without root.
 3. For video, choose the maximum quality. The best available format at or below that height is used
    when the requested height is unavailable.
 4. Choose a destination folder, then add more links if desired. Downloads run one at a time.
-5. Use row buttons to cancel, retry, remove, or open the destination. **Details** opens the activity
-   log without cluttering the main window.
+5. Use row buttons to cancel, retry, remove, or open the destination.
 
 ### Keyboard shortcuts
 
@@ -179,8 +178,8 @@ was left untouched. Use a different folder if you intentionally want a second co
 - Logs: `~/.local/state/tubegrab/tubegrab.log` (rotated; or `$XDG_STATE_HOME/...`)
 - Thumbnail cache: `~/.cache/tubegrab/thumbnails/` (or `$XDG_CACHE_HOME/...`)
 
-The **Details** button shows a live in-memory view of the log. The **Open log file** button opens the
-rotating file, which contains more verbose yt-dlp output useful for bug reports.
+The rotating log at `~/.local/state/tubegrab/tubegrab.log` contains more verbose yt-dlp output
+useful for bug reports.
 
 ## Update
 
@@ -248,7 +247,7 @@ part of the automated suite; metadata and download behavior depends on the sourc
 | MP3 or a codec conversion fails | Your FFmpeg build may lack the codec. Try full FFmpeg from a trusted third-party repository, or choose **Audio · original**. |
 | yt-dlp warns about a missing JavaScript runtime | See the current yt-dlp documentation. Some YouTube formats may be unavailable without a supported JS runtime; TubeGrab passes yt-dlp's normal options and does not bypass access controls. |
 | App does not appear in the GNOME grid | Run `./install.sh` again, check `~/.local/share/applications/tubegrab.desktop`, and make sure the desktop database refresh tools are available. Log out and back in if necessary. |
-| Need diagnostics | Open **Details** or inspect `~/.local/state/tubegrab/tubegrab.log`. |
+| Need diagnostics | Inspect `~/.local/state/tubegrab/tubegrab.log`. |
 
 ## Project layout
 

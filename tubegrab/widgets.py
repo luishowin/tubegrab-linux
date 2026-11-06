@@ -1242,8 +1242,19 @@ class ScrollFrame(tk.Frame):
         self.canvas.bind_all("<Button-4>", self._on_wheel, add="+")
         self.canvas.bind_all("<Button-5>", self._on_wheel, add="+")
 
+    def _sync_scrollregion(self) -> None:
+        bbox = self.canvas.bbox("all")
+        if bbox is None:
+            return
+        # Tk 9 centres a scroll region that is smaller than the viewport, which
+        # cancelled out the page padding after the first resize.  Anchor the
+        # region at (0, 0) and never let it be smaller than the viewport.
+        width = max(self.canvas.winfo_width(), bbox[2])
+        height = max(self.canvas.winfo_height(), bbox[3])
+        self.canvas.configure(scrollregion=(0, 0, width, height))
+
     def _on_inner_configure(self, _event: tk.Event) -> None:
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self._sync_scrollregion()
         self._update_scrollbar()
 
     def _on_canvas_configure(self, event: tk.Event) -> None:
@@ -1251,6 +1262,7 @@ class ScrollFrame(tk.Frame):
             self._window,
             width=max(1, event.width - 2 * self._padding[0]),
         )
+        self._sync_scrollregion()
         self._update_scrollbar()
 
     def _update_scrollbar(self) -> None:

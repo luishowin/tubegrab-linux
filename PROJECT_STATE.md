@@ -1,6 +1,6 @@
 # TubeGrab project state
 
-_Last updated: 2026-11-02_
+_Last updated: 2026-11-06_
 
 ## Current state
 
@@ -27,6 +27,9 @@ _Last updated: 2026-11-02_
 - Reworked the quality popup into a custom dropdown that closes on outside click, `Escape`,
   selection, and application focus loss.
 - Removed all custom cursors and the green accent; disabled Download is now neutral gray.
+- Replaced the application icon with the new YouTube-down-arrow mark and regenerated every PNG size.
+- Fixed the Tk 9 scroll-region centering bug that collapsed the page margin after resizing.
+- Removed the bottom “Open Folder”/“Details” links and separator; diagnostics remain in the rotating log.
 - Removed the bottom “Ready” state; status text appears only while downloading or after an error.
 - Fixed accidental page overscroll when content fits.
 - Improved download recovery:
@@ -51,7 +54,7 @@ python3 -m unittest discover -s tests
 /usr/bin/python3 -m unittest discover -s tests
 ```
 
-Current result: **62 tests pass** under both the mise Python and system Python.
+Current result: **63 tests pass** under both the mise Python and system Python.
 
 Manual checks:
 
