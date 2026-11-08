@@ -1,6 +1,6 @@
 # TubeGrab project state
 
-_Last updated: 2026-11-06_
+_Last updated: 2026-11-08_
 
 ## Current state
 
@@ -38,6 +38,13 @@ _Last updated: 2026-11-06_
   - **Start over** uses `--no-continue` to discard corrupt partial files
   - clearer interrupted-transfer error message
 - Antialiased text now requires and prefers an Xft Tk build; `install.sh` probes for one.
+- Fixed queue card autosizing: autosize cards no longer pin the body height, so cards grow
+  and shrink with their content instead of freezing at the empty/previous height. Long titles
+  and the download status line are no longer clipped.
+- Queue titles and error messages now re-wrap to the real column width whenever the row is
+  resized (including wide Retry / Start over action sets).
+- Queue thumbnails now use a ceiling subsample factor, so they are letterboxed rather than
+  cropped by a couple of pixels.
 
 ## Open items
 
@@ -54,11 +61,13 @@ python3 -m unittest discover -s tests
 /usr/bin/python3 -m unittest discover -s tests
 ```
 
-Current result: **63 tests pass** under both the mise Python and system Python.
+Current result: **66 tests pass** under both the mise Python and system Python.
 
 Manual checks:
 
 - light and dark at 1040x700, 900x620, 800x620, and 640x600
+- long wrapped queue titles keep the full status line and progress bar inside the card
+- queued, downloading, failed (wide Retry/Start over), and completed rows all fit
 - Preview/Options equal height
 - quality popup dismisses on outside click, focus loss, `Escape`, and selection
 - no page scrollbar when content fits

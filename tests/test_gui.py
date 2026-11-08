@@ -200,6 +200,94 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertEqual(self.app.queue_manager.snapshot()[0].status.value, "completed")
         self.assertEqual(self.service.download_calls, 2)
 
+    def test_card_grows_and_shrinks_with_body_content(self) -> None:
+        from tubegrab.widgets import Card
+
+        window = tk.Toplevel(self.root)
+        window.geometry("600x400")
+        card = Card(window, padding=(2, 2))
+        card.pack(fill="x")
+        label = tk.Label(card.body, text="one line")
+        label.pack()
+
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and card.winfo_height() < 20:
+            window.update()
+            time.sleep(0.01)
+        short = card.winfo_height()
+        self.assertGreater(short, 20)
+
+        label.configure(text="\n".join(["line"] * 8))
+        tall = short
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            window.update()
+            tall = card.winfo_height()
+            if tall > short + 40:
+                break
+            time.sleep(0.01)
+        self.assertGreater(tall, short + 40)
+
+        label.configure(text="one line")
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            window.update()
+            if card.winfo_height() < tall:
+                break
+            time.sleep(0.01)
+        self.assertLess(card.winfo_height(), tall)
+
+    def test_queue_row_text_fits_inside_card(self) -> None:
+        from tubegrab.queue import DownloadJob, JobStatus
+
+        self.root.deiconify()
+        self.root.update()
+        job = DownloadJob(
+            id="long-title",
+            url="https://example.com/watch?v=long",
+            mode="video",
+            quality=1080,
+            output_dir=Path(self.temp.name),
+            status=JobStatus.DOWNLOADING,
+            title="【源兵衛川】水の都で過ごす一日。川の上をせせらぎとともに歩く癒しの時間。" * 2,
+            progress=9.0,
+            speed=13.5 * 1024 * 1024,
+            eta=103.0,
+            phase="Video · 1080p",
+        )
+        self.app.queue_view.sync([job])
+        row = self.app.queue_view.rows["long-title"]
+        card = self.app.queue_card
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            self.root.update()
+            if (
+                row.title_label.winfo_width() <= row.meta.winfo_width()
+                and card.winfo_height() >= card.body.winfo_reqheight() + 4
+            ):
+                break
+            time.sleep(0.01)
+
+        card_bottom = card.winfo_rooty() + card.winfo_height()
+        status_bottom = row.status_label.winfo_rooty() + row.status_label.winfo_height()
+        self.assertLessEqual(status_bottom, card_bottom)
+        self.assertLessEqual(row.title_label.winfo_width(), row.meta.winfo_width() + 2)
+
+    def test_queue_thumbnail_is_not_cropped(self) -> None:
+        from tubegrab.app import QueueRow
+
+        def noop(*_args: object) -> None:
+            return
+
+        image = tk.PhotoImage(width=480, height=270)
+        parent = tk.Frame(self.root)
+        row = QueueRow(parent, noop, noop, noop, noop, noop)
+        row.set_thumbnail(image)
+        self.assertIsNotNone(row._thumb_photo)
+        assert row._thumb_photo is not None
+        self.assertLessEqual(row._thumb_photo.width(), 76)
+        self.assertLessEqual(row._thumb_photo.height(), 43)
+
     def test_event_loop_stays_responsive_while_preview_runs(self) -> None:
         self.service.preview_delay = 0.6
         self.app.url_var.set("https://example.com/watch?v=abc")

@@ -290,11 +290,16 @@ class Card(tk.Canvas):
     def _on_configure(self, event: tk.Event) -> None:
         self._draw(event.width, event.height)
         inner_width = max(1, event.width - 2 * self._padding[0])
-        self.itemconfigure(
-            self._window,
-            width=inner_width,
-            height=max(1, event.height - 2 * self._padding[1]),
-        )
+        if self._autosize:
+            # Let the body keep its requested height so content growth and
+            # shrinkage trigger a <Configure> event and resize the card.
+            self.itemconfigure(self._window, width=inner_width)
+        else:
+            self.itemconfigure(
+                self._window,
+                width=inner_width,
+                height=max(1, event.height - 2 * self._padding[1]),
+            )
 
     def _on_body_configure(self, _event: tk.Event | None = None) -> None:
         if not self._autosize:

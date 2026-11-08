@@ -1,6 +1,6 @@
 TubeGrab UI/build notes
 =======================
-Last updated: 2026-11-06
+Last updated: 2026-11-08
 Branch: main
 Version: 1.2.0
 
@@ -103,16 +103,22 @@ Rule:
 -------------------------------------
 Symptom:
   The Preview card was much taller than Options; later an empty-state frame
-  disappeared inside a zero-height body.
+  disappeared inside a zero-height body. Queue rows with wrapped titles had
+  their status line clipped at the card's bottom edge.
 
 Cause:
   - A Canvas has a large default requested size unless explicitly constrained.
-  - Autosize Cards updated only their width and left place-managed content in a
-    1px-tall body.
+  - Autosize Cards forced the body window's height to the card's current
+    height. Content growth therefore never produced a body <Configure> event,
+    so the card stayed at whatever height it had when the window last resized.
   - A footnote inside the Options grid row made the Preview stretch taller.
 
 Rules:
-  - Autosize cards must set the body window's width AND height on Configure.
+  - Autosize cards must set only the body window's width on Configure and let
+    the body keep its requested height. The body <Configure> handler then
+    resizes the card for both growth and shrinkage.
+  - Do not pin the body height for autosize cards; it hides every content
+    reflow. Set the height explicitly only for autosize=False cards.
   - For a fill-to-row card, set autosize=False and height=1 so the grid row
     (driven by the Options card) determines the height; pack with
     fill="both", expand=True.
@@ -194,6 +200,8 @@ Check:
   - text is smooth (Xft)
   - rounded corners have no square seams/fringes
   - Preview height equals Options
+  - long queue titles wrap and keep the status line/progress bar inside the card
+  - queue thumbnails are letterboxed, never cropped
   - no scrollbar when content fits
   - quality dropdown closes on outside click/focus loss/Escape
   - disposable partial downloads show Retry and Start over

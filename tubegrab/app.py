@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import queue
 import threading
 import tkinter as tk
@@ -128,7 +129,12 @@ class QueueRow:
         self.meta.columnconfigure(0, weight=1)
 
         self.title_label = ttk.Label(
-            self.meta, text="", style="QueueTitle.TLabel", anchor="w", justify="left"
+            self.meta,
+            text="",
+            style="QueueTitle.TLabel",
+            anchor="w",
+            justify="left",
+            wraplength=560,
         )
         self.title_label.grid(row=0, column=0, sticky="w")
 
@@ -235,7 +241,19 @@ class QueueRow:
             self.remove_button,
         )
         self._action_state: str | None = None
+        self._wraplength = 560
         self.job: DownloadJob = None  # type: ignore[assignment]
+        self.meta.bind("<Configure>", self._on_meta_configure, add="+")
+
+    def _on_meta_configure(self, event: tk.Event) -> None:
+        """Wrap text to the real column width instead of a fixed guess."""
+
+        wraplength = max(120, event.width - 2)
+        if wraplength == self._wraplength:
+            return
+        self._wraplength = wraplength
+        self.title_label.configure(wraplength=wraplength)
+        self.message_label.configure(wraplength=wraplength)
 
     def _draw_placeholder(self) -> None:
         self.thumb.delete("all")
@@ -274,7 +292,11 @@ class QueueRow:
         if self._thumb_key == key:
             return
         self._thumb_key = key
-        factor = max(1, round(min(source.width() / 76, source.height() / 43)))
+        # Round up so the image never exceeds the thumbnail canvas; a fractional
+        # downscale has to be letterboxed instead of cropped.
+        factor = max(
+            1, math.ceil(source.width() / 76), math.ceil(source.height() / 43)
+        )
         photo = source.subsample(factor, factor) if factor > 1 else source
         self._thumb_photo = photo
         self.thumb.delete("all")
@@ -321,13 +343,6 @@ class QueueRow:
 
         self._update_buttons(job)
         self._update_bar(job)
-
-        wraplength = max(240, self.frame.winfo_width() - 250)
-        try:
-            self.title_label.configure(wraplength=wraplength)
-            self.message_label.configure(wraplength=wraplength)
-        except tk.TclError:
-            pass
 
     @staticmethod
     def _status_text(job: DownloadJob) -> str:
