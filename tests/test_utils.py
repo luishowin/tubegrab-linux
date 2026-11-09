@@ -130,16 +130,23 @@ class FormatSummaryTests(unittest.TestCase):
         summary = summarize_formats(formats)
         self.assertEqual(summary.heights, [1080, 720])
         self.assertEqual(len(summary.audio), 2)
+        self.assertEqual(summary.video_codecs, ["AV1", "VP9"])
+        self.assertEqual(summary.containers, ["MP4", "WebM"])
         opus = next(item for item in summary.audio if item.codec == "Opus")
         self.assertEqual(opus.bitrate_kbps, 160)
         self.assertIn("1080p", summary.resolution_text)
         self.assertIn("Opus", summary.audio_text)
+        self.assertIn("AV1", summary.video_codec_text)
+        self.assertIn("WebM", summary.container_text)
 
     def test_missing_formats(self) -> None:
         summary = summarize_formats(None)
         self.assertEqual(summary.heights, [])
         self.assertEqual(summary.audio, [])
+        self.assertEqual(summary.video_codecs, [])
+        self.assertEqual(summary.containers, [])
         self.assertIn("unavailable", summary.resolution_text.lower())
+        self.assertIn("unavailable", summary.video_codec_text.lower())
 
 
 if __name__ == "__main__":

@@ -57,6 +57,7 @@ class SlowFakeService:
         handle,
         on_progress=None,
         restart=False,
+        container="auto",
     ) -> DownloadResult:
         self.download_calls += 1
         if self.fail_next:
@@ -287,6 +288,47 @@ class GuiSmokeTests(unittest.TestCase):
         assert row._thumb_photo is not None
         self.assertLessEqual(row._thumb_photo.width(), 76)
         self.assertLessEqual(row._thumb_photo.height(), 43)
+
+    def test_quality_slider_and_container_controls(self) -> None:
+        from tubegrab.app import QUALITY_OPTIONS
+
+        self.root.deiconify()
+        self.root.update()
+        labels = [label for _value, label in self.app.quality_slider._segments]
+        self.assertEqual(labels, [label for label, _value in QUALITY_OPTIONS])
+        self.app.quality_var.set("720p")
+        self.root.update()
+        self.assertTrue(self.app.quality_slider.grid_info())
+        self.assertTrue(self.app.container_row.grid_info())
+        self.assertEqual(self.app.container_var.get(), "auto")
+
+        self.app.mode_var.set("audio")
+        self.root.update()
+        self.assertFalse(self.app.quality_slider.grid_info())
+        self.assertFalse(self.app.container_row.grid_info())
+
+        self.app.mode_var.set("video")
+        self.root.update()
+        self.assertTrue(self.app.quality_slider.grid_info())
+        self.assertTrue(self.app.container_row.grid_info())
+
+    def test_preview_lists_codecs_and_containers(self) -> None:
+        url = "https://example.com/watch?v=codec"
+        self.app.url_var.set(url)
+        self.root.update()
+        info = MediaInfo(
+            url=url,
+            title="Codec test",
+            heights=[1080, 720],
+            video_codecs=["AV1", "VP9", "H.264"],
+            containers=["MP4", "WebM"],
+        )
+        self.app._handle_preview_info(self.app.preview_generation, info)
+        self.root.update()
+        self.assertIn("AV1", self.app.preview_codec_var.get())
+        self.assertIn("H.264", self.app.preview_codec_var.get())
+        self.assertIn("MP4", self.app.preview_container_var.get())
+        self.assertIn("WebM", self.app.preview_container_var.get())
 
     def test_event_loop_stays_responsive_while_preview_runs(self) -> None:
         self.service.preview_delay = 0.6

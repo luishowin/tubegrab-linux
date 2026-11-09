@@ -104,6 +104,37 @@ class CommandTests(unittest.TestCase):
             build_download_command(["yt-dlp"], "other", None, Path("/tmp"), "https://e.com")
         with self.assertRaises(ValueError):
             build_download_command(["yt-dlp"], "video", 123, Path("/tmp"), "https://e.com")
+        with self.assertRaises(ValueError):
+            build_download_command(
+                ["yt-dlp"], "video", None, Path("/tmp"), "https://e.com", container="avi"
+            )
+
+    def test_mp4_container_prefers_compatible_streams(self) -> None:
+        command = build_download_command(
+            ["yt-dlp"],
+            "video",
+            1080,
+            Path("/tmp/videos"),
+            "https://example.com/v",
+            container="mp4",
+        )
+        selector = command[command.index("-f") + 1]
+        self.assertIn("bv*[ext=mp4][height<=1080]+ba[ext=m4a]", selector)
+        self.assertIn("bv*[height<=1080]+ba/b[height<=1080]", selector)
+        self.assertEqual(command[command.index("--merge-output-format") + 1], "mp4/mkv")
+
+    def test_webm_container_prefers_compatible_streams(self) -> None:
+        command = build_download_command(
+            ["yt-dlp"],
+            "video",
+            None,
+            Path("/tmp/videos"),
+            "https://example.com/v",
+            container="webm",
+        )
+        selector = command[command.index("-f") + 1]
+        self.assertIn("bv*[ext=webm]+ba[ext=webm]/bv*+ba/b", selector)
+        self.assertEqual(command[command.index("--merge-output-format") + 1], "webm/mkv")
 
 
 class ProgressTests(unittest.TestCase):
@@ -169,6 +200,8 @@ class MetadataParsingTests(unittest.TestCase):
         self.assertEqual(info.uploader, "Example Channel")
         self.assertEqual(info.duration, 125.4)
         self.assertEqual(info.heights, [1080, 720])
+        self.assertEqual(info.video_codecs, ["AV1", "VP9"])
+        self.assertEqual(info.containers, ["MP4", "WebM"])
         self.assertEqual(info.audio[0].codec, "Opus")
         self.assertEqual(info.extractor, "Youtube")
 

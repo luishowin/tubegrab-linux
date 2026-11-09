@@ -23,6 +23,7 @@ from .utils import (
     AudioFormat,
     FormatSummary,
     OUTPUT_TEMPLATE,
+    VALID_CONTAINERS,
     is_relative_to,
     safe_filename,
     summarize_formats,
@@ -122,6 +123,8 @@ class MediaInfo:
     webpage_url: str | None = None
     heights: list[int] = field(default_factory=list)
     audio: list[AudioFormat] = field(default_factory=list)
+    video_codecs: list[str] = field(default_factory=list)
+    containers: list[str] = field(default_factory=list)
 
     @property
     def display_title(self) -> str:
@@ -129,7 +132,12 @@ class MediaInfo:
 
     @property
     def summary(self) -> FormatSummary:
-        return FormatSummary(heights=list(self.heights), audio=list(self.audio))
+        return FormatSummary(
+            heights=list(self.heights),
+            audio=list(self.audio),
+            video_codecs=list(self.video_codecs),
+            containers=list(self.containers),
+        )
 
 
 @dataclass(frozen=True)
@@ -291,6 +299,7 @@ def build_download_command(
     url: str,
     js_runtime: str | None = None,
     restart: bool = False,
+    container: str = "auto",
 ) -> list[str]:
     """Build a download command as an argument list (never a shell string)."""
 
@@ -298,6 +307,8 @@ def build_download_command(
         raise ValueError(f"Unknown download mode: {mode}")
     if quality is not None and quality not in {2160, 1440, 1080, 720, 480, 360, 240, 144}:
         raise ValueError(f"Unsupported video quality: {quality}")
+    if container not in VALID_CONTAINERS:
+        raise ValueError(f"Unsupported video container: {container}")
 
     args = [*command, *COMMON_DOWNLOAD_FLAGS]
     if js_runtime:
@@ -306,8 +317,18 @@ def build_download_command(
         args.append("--no-continue")
     args.extend(["-P", str(output_dir)])
     if mode == "video":
-        selector = "bv*+ba/b" if quality is None else f"bv*[height<={quality}]+ba/b[height<={quality}]"
-        args.extend(["-f", selector, "--merge-output-format", "mkv"])
+        height = "" if quality is None else f"[height<={quality}]"
+        fallback = f"bv*{height}+ba/b{height}"
+        if container == "mp4":
+            selector = f"bv*[ext=mp4]{height}+ba[ext=m4a]/{fallback}"
+            merge_format = "mp4/mkv"
+        elif container == "webm":
+            selector = f"bv*[ext=webm]{height}+ba[ext=webm]/{fallback}"
+            merge_format = "webm/mkv"
+        else:
+            selector = fallback
+            merge_format = "mkv"
+        args.extend(["-f", selector, "--merge-output-format", merge_format])
     elif mode == "audio":
         # "best" extracts the source audio without a lossy conversion.
         args.extend(["-f", "ba/b", "-x", "--audio-format", "best"])
@@ -439,6 +460,8 @@ def parse_media_info(data: object, requested_url: str) -> MediaInfo:
         webpage_url=webpage_url,
         heights=summary.heights,
         audio=summary.audio,
+        video_codecs=summary.video_codecs,
+        containers=summary.containers,
     )
 
 
@@ -715,6 +738,7 @@ class YtDlpDownloader:
         handle: ProcessHandle | None = None,
         on_progress: Callable[[ProgressUpdate], None] | None = None,
         restart: bool = False,
+        container: str = "auto",
     ) -> DownloadResult:
         validated = validate_url(url)
         if mode in {"video", "mp3"} and not self.ffmpeg:
@@ -732,15 +756,17 @@ class YtDlpDownloader:
             validated,
             js_runtime=self.js_runtime,
             restart=restart,
+            container=container,
         )
         if self.ffmpeg:
             marker = args.index("--") if "--" in args else len(args)
             args[marker:marker] = ["--ffmpeg-location", self.ffmpeg]
         self.logger.info(
-            "Starting %s download to %s (quality=%s, restart=%s, url=%s)",
+            "Starting %s download to %s (quality=%s, container=%s, restart=%s, url=%s)",
             mode,
             output_dir,
             quality or "best",
+            container,
             restart,
             validated,
         )

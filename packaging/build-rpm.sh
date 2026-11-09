@@ -48,9 +48,11 @@ rpmbuild -ba --define "_topdir $TOPDIR" "$PROJECT_DIR/packaging/tubegrab.spec"
 mkdir -p "$PROJECT_DIR/dist"
 cp "$TOPDIR"/RPMS/noarch/tubegrab-"$VERSION"-*.rpm "$PROJECT_DIR/dist/"
 
+RPM_FILE=$(ls -1 "$PROJECT_DIR"/dist/tubegrab-"$VERSION"-*.rpm | head -n 1)
+
 echo
 echo "RPM written to:"
-ls -1 "$PROJECT_DIR"/dist/tubegrab-"$VERSION"-*.rpm
+echo "  $RPM_FILE"
 echo
 echo "Install it with:"
-echo "  sudo dnf install $PROJECT_DIR/dist/tubegrab-$VERSION-1.fc44.noarch.rpm"
+echo "  sudo dnf install $RPM_FILE"

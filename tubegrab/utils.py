@@ -21,7 +21,20 @@ MAX_FILENAME_BYTES = 150
 # different videos that happen to have the same title.
 OUTPUT_TEMPLATE = "%(title).150B [%(id)s].%(ext)s"
 
+VALID_CONTAINERS = {"auto", "mp4", "webm"}
+
 _CODEC_NAMES = {
+    "av01": "AV1",
+    "av1": "AV1",
+    "vp09": "VP9",
+    "vp9": "VP9",
+    "avc1": "H.264",
+    "avc3": "H.264",
+    "h264": "H.264",
+    "hev1": "HEVC",
+    "hvc1": "HEVC",
+    "h265": "HEVC",
+    "theora": "Theora",
     "opus": "Opus",
     "vorbis": "Vorbis",
     "mp4a": "AAC",
@@ -36,6 +49,10 @@ _CODEC_NAMES = {
     "pcm_s24le": "PCM",
     "none": "Unknown",
 }
+
+_VIDEO_CODEC_ORDER = ("AV1", "VP9", "H.264", "HEVC", "Theora")
+_CONTAINER_NAMES = {"mp4": "MP4", "webm": "WebM", "mkv": "MKV", "mov": "MOV"}
+_CONTAINER_ORDER = ("MP4", "WebM", "MKV", "MOV")
 
 
 class ValidationError(ValueError):
@@ -181,6 +198,8 @@ class AudioFormat:
 class FormatSummary:
     heights: list[int] = field(default_factory=list)
     audio: list[AudioFormat] = field(default_factory=list)
+    video_codecs: list[str] = field(default_factory=list)
+    containers: list[str] = field(default_factory=list)
 
     @property
     def resolution_text(self) -> str:
@@ -194,6 +213,24 @@ class FormatSummary:
             return "Audio formats unavailable"
         return ", ".join(item.label for item in self.audio[:4])
 
+    @property
+    def video_codec_text(self) -> str:
+        if not self.video_codecs:
+            return "Video codecs unavailable"
+        return ", ".join(self.video_codecs)
+
+    @property
+    def container_text(self) -> str:
+        if not self.containers:
+            return "Containers unavailable"
+        return ", ".join(self.containers)
+
+
+def _ordered_values(values: set[str], preference: tuple[str, ...]) -> list[str]:
+    result = [item for item in preference if item in values]
+    result.extend(sorted(item for item in values if item not in preference))
+    return result
+
 
 def summarize_formats(formats: object) -> FormatSummary:
     summary = FormatSummary()
@@ -202,6 +239,8 @@ def summarize_formats(formats: object) -> FormatSummary:
 
     heights: set[int] = set()
     audio_by_key: dict[tuple[str, str], AudioFormat] = {}
+    video_codecs: set[str] = set()
+    containers: set[str] = set()
 
     for entry in formats:
         if not isinstance(entry, dict):
@@ -213,6 +252,12 @@ def summarize_formats(formats: object) -> FormatSummary:
         height = _number(entry.get("height"))
         if height is not None and height >= 144 and vcodec != "none":
             heights.add(int(height))
+            codec = codec_name(vcodec)
+            if codec:
+                video_codecs.add(codec)
+            extension = str(entry.get("ext") or "").strip().lower()
+            if extension:
+                containers.add(_CONTAINER_NAMES.get(extension, extension.upper()))
 
         if acodec != "none" and vcodec in {"none", ""}:
             codec = codec_name(acodec)
@@ -228,6 +273,8 @@ def summarize_formats(formats: object) -> FormatSummary:
                 audio_by_key[key] = candidate
 
     summary.heights = sorted(heights, reverse=True)
+    summary.video_codecs = _ordered_values(video_codecs, _VIDEO_CODEC_ORDER)
+    summary.containers = _ordered_values(containers, _CONTAINER_ORDER)
     summary.audio = sorted(
         audio_by_key.values(),
         key=lambda item: (item.bitrate_kbps or 0, item.codec),

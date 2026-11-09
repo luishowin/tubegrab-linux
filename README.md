@@ -24,10 +24,15 @@ to save. Respect the source site's terms and applicable copyright law.
 - Sequential download queue: add more links while one is downloading, cancel the active item,
   retry failed/cancelled items (resume or start over), remove queued/completed items, and clear
   finished rows.
-- Video quality selection: best available, 2160p, 1440p, 1080p, 720p, 480p, 360p, 240p, or 144p. The selector
-  always falls back to the best format at or below the selected height.
-- Separate best video/audio streams are merged into MKV without re-encoding. A combined source
-  stream keeps its own compatible container.
+- Video quality selection with a compact segmented slider: best available, 2160p, 1440p, 1080p,
+  720p, 480p, 360p, 240p, or 144p. The selector always falls back to the best format at or below the
+  selected height.
+- Container selection for video: **Auto** (merge to MKV), **MP4** (prefer H.264/AAC), or **WebM**
+  (prefer VP9/AV1/Opus). Incompatible choices fall back to MKV instead of re-encoding.
+- Preview lists the source resolutions, video codecs (AV1, VP9, H.264, …), containers (MP4, WebM, …),
+  and audio formats.
+- Separate best video/audio streams are merged without re-encoding. A combined source stream keeps
+  its own compatible container.
 - Audio can be kept in its original source format (typically Opus or AAC, no lossy conversion), or
   converted to high-quality MP3 V0 VBR (~245 kbps).
 - Download folder picker, remembered destination, and an **Open folder** action.
@@ -40,8 +45,8 @@ to save. Respect the source site's terms and applicable copyright law.
 
 ## Project status
 
-- Version **1.2.0** on `main`.
-- 66 automated tests; the GUI smoke tests run when a display is available.
+- Version **1.3.0** on `main`.
+- 72 automated tests; the GUI smoke tests run when a display is available.
 - Fedora `noarch` RPM is built with `./packaging/build-rpm.sh`.
 - Larger design/build notes: [PROJECT_STATE.md](PROJECT_STATE.md) and [BUILD-NOTES.txt](BUILD-NOTES.txt).
 
@@ -125,7 +130,7 @@ A system-wide `noarch` RPM can be built from the project directory:
 ```bash
 sudo dnf install rpm-build
 ./packaging/build-rpm.sh
-sudo dnf install dist/tubegrab-1.2.0-1.fc44.noarch.rpm
+sudo dnf install dist/tubegrab-1.3.0-1.fc45.noarch.rpm
 ```
 
 The RPM installs the application under `/usr/share/tubegrab`, the `tubegrab` command in
@@ -138,8 +143,8 @@ you prefer a per-user installation without root.
 1. Paste an http:// or https:// link and press **Download**, or press **Preview** first to inspect
    the video. Enter in the link field downloads; Ctrl+Enter previews.
 2. Choose **Video**, **Audio · original**, or **Audio · MP3**.
-3. For video, choose the maximum quality. The best available format at or below that height is used
-   when the requested height is unavailable.
+3. For video, choose the maximum quality and a container. The best available format at or below
+   that height is used when the requested height is unavailable.
 4. Choose a destination folder, then add more links if desired. Downloads run one at a time.
 5. Use row buttons to cancel, retry, remove, or open the destination.
 
@@ -161,8 +166,9 @@ you prefer a per-user installation without root.
 - **Audio · MP3** converts the source audio to MP3 V0 variable bitrate. This is a lossy conversion;
   the conversion quality is distinct from the source stream quality.
 - **Video** downloads separate best-quality video/audio streams when available and merges them using
-  FFmpeg. MKV is used when merging so modern codecs can be combined without re-encoding. A single
-  combined stream is left in its original container.
+  FFmpeg. **Auto** merges to MKV so modern codecs can be combined without re-encoding. **MP4**
+  prefers H.264/AAC streams and **WebM** prefers VP9/AV1/Opus; if the source lacks compatible streams,
+  the merge falls back to MKV. A single combined stream is left in its original container.
 
 ### Duplicate and existing files
 
@@ -173,7 +179,7 @@ was left untouched. Use a different folder if you intentionally want a second co
 ## Configuration and logs
 
 - Settings: `~/.config/tubegrab/config.json` (or `$XDG_CONFIG_HOME/tubegrab/config.json`)
-  - remembered destination, download mode, video quality, window size
+  - remembered destination, download mode, video quality, video container, window size
   - no cookies, passwords, or authentication data are stored
 - Logs: `~/.local/state/tubegrab/tubegrab.log` (rotated; or `$XDG_STATE_HOME/...`)
 - Thumbnail cache: `~/.cache/tubegrab/thumbnails/` (or `$XDG_CACHE_HOME/...`)

@@ -1,5 +1,5 @@
 Name:           tubegrab
-Version:        1.2.0
+Version:        1.3.0
 Release:        1%{?dist}
 Summary:        Download video and audio with yt-dlp and FFmpeg
 
@@ -16,8 +16,8 @@ Requires:       /usr/bin/ffmpeg
 %description
 TubeGrab is a small GNOME-friendly desktop utility for downloading video and
 audio with yt-dlp and FFmpeg. It provides a metadata preview, a sequential
-download queue, video quality selection, original-format audio, and optional
-MP3 conversion.
+download queue, a compact video quality slider, MP4/WebM container selection,
+original-format audio, and optional MP3 conversion.
 
 %prep
 %autosetup -n %{name}-%{version}
@@ -85,6 +85,10 @@ fi
 %doc README.md
 
 %changelog
+* Mon Nov 09 2026 Luis Maina <luis.howin.maina@gmail.com> - 1.3.0-1
+- Replace the video quality dropdown with a full-width segmented slider.
+- Add Auto/MP4/WebM container selection with MKV fallback.
+- Show video codecs and containers in the preview card.
 * Sun Nov 01 2026 Luis Maina <luis.howin.maina@gmail.com> - 1.2.0-1
 - Rebuild the interface with an Apple-inspired light/dark design.
 * Sun Nov 01 2026 Luis Maina <luis.howin.maina@gmail.com> - 1.1.1-1

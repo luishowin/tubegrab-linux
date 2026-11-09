@@ -45,6 +45,7 @@ class ConfigTests(unittest.TestCase):
         config = load_config(self.path)
         self.assertEqual(config.mode, "video")
         self.assertIsNone(config.video_quality)
+        self.assertEqual(config.video_container, "auto")
         self.assertTrue(config.output_dir)
         self.assertGreaterEqual(config.window_width, 900)
 
@@ -53,6 +54,7 @@ class ConfigTests(unittest.TestCase):
             output_dir="/tmp/with space/日本語",
             mode="mp3",
             video_quality=1080,
+            video_container="mp4",
             window_width=1100,
             window_height=720,
         )
@@ -61,6 +63,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded.output_dir, original.output_dir)
         self.assertEqual(loaded.mode, "mp3")
         self.assertEqual(loaded.video_quality, 1080)
+        self.assertEqual(loaded.video_container, "mp4")
         self.assertEqual(loaded.window_width, 1100)
         self.assertEqual(len(self.path.read_text(encoding="utf-8").encode("utf-8")), self.path.stat().st_size)
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
@@ -80,6 +83,7 @@ class ConfigTests(unittest.TestCase):
                     "output_dir": "",
                     "mode": "nonsense",
                     "video_quality": 9999,
+                    "video_container": "avi",
                     "window_width": 1,
                     "window_height": 999999,
                 }
@@ -89,6 +93,7 @@ class ConfigTests(unittest.TestCase):
         config = load_config(self.path)
         self.assertEqual(config.mode, "video")
         self.assertIsNone(config.video_quality)
+        self.assertEqual(config.video_container, "auto")
         self.assertTrue(config.output_dir)
         self.assertGreaterEqual(config.window_width, 900)
         self.assertLessEqual(config.window_height, 3000)

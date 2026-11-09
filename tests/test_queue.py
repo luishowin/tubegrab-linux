@@ -38,6 +38,7 @@ class FakeService:
         self.fail_urls: set[str] = set()
         self.starts: Counter[str] = Counter()
         self.restart_flags: dict[str, list[bool]] = {}
+        self.containers: dict[str, list[str]] = {}
         self._lock = threading.Lock()
 
     def gate(self, url: str) -> threading.Event:
@@ -61,10 +62,12 @@ class FakeService:
         handle,
         on_progress=None,
         restart=False,
+        container="auto",
     ) -> DownloadResult:
         with self._lock:
             self.starts[url] += 1
             self.restart_flags.setdefault(url, []).append(restart)
+            self.containers.setdefault(url, []).append(container)
         self.started.put(url)
         if on_progress is not None:
             on_progress(ProgressUpdate(percent=50.0, phase="Video · 720p"))
@@ -97,8 +100,14 @@ class QueueTests(unittest.TestCase):
         self.manager.start()
         self.addCleanup(self.manager.shutdown, 2.0)
 
-    def add(self, url: str, mode: str = "video", quality: int | None = 1080):
-        return self.manager.add(url, mode, quality, self.output)
+    def add(
+        self,
+        url: str,
+        mode: str = "video",
+        quality: int | None = 1080,
+        container: str = "auto",
+    ):
+        return self.manager.add(url, mode, quality, self.output, container=container)
 
     def status(self, job_id: str) -> JobStatus | None:
         job = next((item for item in self.manager.snapshot() if item.id == job_id), None)
@@ -255,9 +264,34 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(self.status(job_id), JobStatus.CANCELLED)
         gate.set()
 
+    def test_container_choice_is_passed_to_downloader(self) -> None:
+        url = "https://example.com/container"
+        job_id, added = self.add(url, container="mp4")
+        self.assertTrue(added)
+        self.assertTrue(wait_for(lambda: self.status(job_id) == JobStatus.COMPLETED))
+        self.assertEqual(self.service.containers[url], ["mp4"])
+
+    def test_same_url_with_different_container_is_not_a_duplicate(self) -> None:
+        url = "https://example.com/container-duplicate"
+        gate = self.service.gate(url)
+        first_id, first_added = self.add(url, container="mp4")
+        second_id, second_added = self.add(url, container="webm")
+        self.assertTrue(first_added)
+        self.assertTrue(second_added)
+        self.assertNotEqual(first_id, second_id)
+        self.assertEqual(len(self.manager.snapshot()), 2)
+        self.assertEqual(self.service.started.get(timeout=2), url)
+        gate.set()
+        self.assertTrue(wait_for(lambda: self.status(first_id) == JobStatus.COMPLETED))
+        self.assertTrue(wait_for(lambda: self.status(second_id) == JobStatus.COMPLETED))
+
     def test_invalid_add_raises(self) -> None:
         with self.assertRaises(ValidationError):
             self.manager.add("not a url", "video", None, self.output)
+        with self.assertRaises(ValueError):
+            self.manager.add(
+                "https://example.com/v", "video", None, self.output, container="avi"
+            )
 
 
 if __name__ == "__main__":

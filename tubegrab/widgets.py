@@ -13,7 +13,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
 from tkinter import ttk
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Sequence
 
 from .theme import current_fonts, current_palette
 
@@ -639,6 +639,7 @@ class SegmentedControl(tk.Canvas):
         command: Callable[[], Any] | None = None,
         background: str | None = None,
         font: tkfont.Font | None = None,
+        stretch: bool = False,
     ) -> None:
         palette = current_palette()
         fonts = current_fonts()
@@ -647,11 +648,14 @@ class SegmentedControl(tk.Canvas):
         self._command = command
         self._font = font or fonts.small_bold
         self._background = background or palette.card
+        self._stretch = stretch
+        self._focused = False
         self._segment_widths = [
-            max(50, self._font.measure(label) + 26) for _, label in self._segments
+            max(34, self._font.measure(label) + 10) for _, label in self._segments
         ]
         self._height = 30
         total = sum(self._segment_widths) + 4 + 2 * (len(self._segments) - 1)
+        self._intrinsic_width = total
         super().__init__(
             master,
             width=total,
@@ -666,6 +670,10 @@ class SegmentedControl(tk.Canvas):
         self.bind("<Button-1>", self._on_click)
         self.bind("<Left>", lambda _event: self._move(-1))
         self.bind("<Right>", lambda _event: self._move(1))
+        self.bind("<Home>", lambda _event: self._select_index(0))
+        self.bind("<End>", lambda _event: self._select_index(len(self._segments) - 1))
+        self.bind("<FocusIn>", self._on_focus_in)
+        self.bind("<FocusOut>", self._on_focus_out)
         self._draw()
 
     def _selected_index(self) -> int:
@@ -675,15 +683,35 @@ class SegmentedControl(tk.Canvas):
                 return index
         return 0
 
+    def _current_width(self) -> float:
+        actual_width = self.winfo_width()
+        return float(actual_width if actual_width > 1 else self._intrinsic_width)
+
+    def _layout_widths(self) -> list[float]:
+        if not self._segments:
+            return []
+        if not self._stretch:
+            return list(self._segment_widths)
+        width = self._current_width()
+        available = max(
+            float(len(self._segments)),
+            width - 4 - 2 * (len(self._segments) - 1),
+        )
+        preferred = sum(self._segment_widths)
+        scale = available / preferred if preferred else 1.0
+        return [item * scale for item in self._segment_widths]
+
     def _segment_bounds(self, index: int) -> tuple[float, float]:
-        x = 2 + sum(self._segment_widths[:index]) + 2 * index
-        return x, x + self._segment_widths[index]
+        widths = self._layout_widths()
+        x = 2.0
+        for item in widths[:index]:
+            x += item + 2
+        return x, x + widths[index]
 
     def _draw(self) -> None:
         palette = current_palette()
         self.delete("all")
-        actual_width = self.winfo_width()
-        width = actual_width if actual_width > 1 else sum(self._segment_widths) + 4 + 2 * (len(self._segments) - 1)
+        width = self._current_width()
         height = self._height
         draw_round_rect(self, 1, 1, width - 1, height - 1, 9, fill=palette.seg_track)
         selected = self._selected_index()
@@ -708,6 +736,17 @@ class SegmentedControl(tk.Canvas):
                 fill=palette.text,
                 font=self._font,
             )
+        if self._focused:
+            draw_round_rect(
+                self,
+                1,
+                1,
+                width - 1,
+                height - 1,
+                9,
+                outline=palette.accent,
+                background=self._background,
+            )
 
     def _on_variable_changed(self, *_args: Any) -> None:
         self._draw()
@@ -716,283 +755,29 @@ class SegmentedControl(tk.Canvas):
         for index, (value, _label) in enumerate(self._segments):
             left, right = self._segment_bounds(index)
             if left <= event.x <= right:
+                self.focus_set()
                 self._variable.set(value)
                 if self._command is not None:
                     self._command()
                 return
 
+    def _select_index(self, index: int) -> str:
+        if self._segments:
+            self._variable.set(self._segments[max(0, min(len(self._segments) - 1, index))][0])
+            if self._command is not None:
+                self._command()
+        return "break"
+
     def _move(self, direction: int) -> str:
-        index = max(0, min(len(self._segments) - 1, self._selected_index() + direction))
-        self._variable.set(self._segments[index][0])
-        if self._command is not None:
-            self._command()
-        return "break"
+        return self._select_index(self._selected_index() + direction)
 
-
-class PopupSelect(tk.Canvas):
-    """Compact pop-up menu control matching the mockup's quality picker."""
-
-    def __init__(
-        self,
-        master: tk.Widget,
-        variable: tk.StringVar,
-        values: Iterable[str],
-        *,
-        command: Callable[[], Any] | None = None,
-        background: str | None = None,
-        font: tkfont.Font | None = None,
-        chevron: tk.PhotoImage | None = None,
-    ) -> None:
-        palette = current_palette()
-        fonts = current_fonts()
-        self._variable = variable
-        self._values = list(values)
-        self._command = command
-        self._font = font or fonts.small
-        self._background = background or palette.card
-        self._chevron = chevron
-        self._hovered = False
-        self._height = 26
-        text_width = max((self._font.measure(item) for item in self._values), default=60)
-        self._width = text_width + 46
-        super().__init__(
-            master,
-            width=self._width,
-            height=self._height,
-            background=self._background,
-            borderwidth=0,
-            highlightthickness=0,
-            takefocus=1,
-        )
-        self._popup: tk.Toplevel | None = None
-        self._rows: list[tk.Label] = []
-        self._active_index = 0
-        self._focus_after: str | None = None
-        self._poll_after: str | None = None
-        self._trace = variable.trace_add("write", lambda *_args: self._draw())
-        self.bind("<Enter>", lambda _event: self._set_hover(True))
-        self.bind("<Leave>", lambda _event: self._set_hover(False))
-        self.bind("<Configure>", lambda _event: self._draw())
-        self.bind("<ButtonRelease-1>", self._open_menu)
-        self.bind("<space>", self._on_return)
-        self.bind("<Return>", self._on_return)
-        self.bind("<Down>", lambda _event: self._move_active(1))
-        self.bind("<Up>", lambda _event: self._move_active(-1))
-        self.bind("<Escape>", lambda _event: self._close_popup())
-        self.bind("<Destroy>", lambda _event: self._close_popup())
-        self.winfo_toplevel().bind("<FocusOut>", self._on_root_focus_out, add="+")
+    def _on_focus_in(self, _event: tk.Event) -> None:
+        self._focused = True
         self._draw()
 
-    def _draw(self) -> None:
-        palette = current_palette()
-        self.delete("all")
-        actual_width = self.winfo_width()
-        width = actual_width if actual_width > 1 else self._width
-        fill = palette.fill_strong if self._hovered else palette.fill
-        draw_round_rect(self, 1, 1, width - 1, self._height - 1, 7, fill=fill)
-        self.create_text(
-            11,
-            self._height / 2,
-            text=self._variable.get(),
-            anchor="w",
-            fill=palette.text,
-            font=self._font,
-        )
-        chevron_left = width - 23
-        draw_round_rect(
-            self,
-            chevron_left,
-            3,
-            width - 3,
-            self._height - 3,
-            5,
-            fill=palette.accent,
-            background=fill,
-        )
-        if self._chevron is not None:
-            self.create_image((chevron_left + width - 3) / 2, self._height / 2, image=self._chevron)
-        else:
-            self.create_text(
-                (chevron_left + width - 3) / 2,
-                self._height / 2,
-                text="⌄",
-                fill="#ffffff",
-                font=self._font,
-            )
-
-    def _set_hover(self, hovered: bool) -> None:
-        self._hovered = hovered
+    def _on_focus_out(self, _event: tk.Event) -> None:
+        self._focused = False
         self._draw()
-
-    def _on_return(self, _event: tk.Event | None = None) -> str:
-        if self._popup is not None:
-            self._select(self._values[self._active_index])
-        else:
-            self._open_menu()
-        return "break"
-
-    def _open_menu(self, _event: tk.Event | None = None) -> str:
-        if self._popup is not None:
-            self._close_popup()
-            return "break"
-        self.focus_set()
-        palette = current_palette()
-        fonts = current_fonts()
-        current = self._variable.get()
-        self._active_index = self._values.index(current) if current in self._values else 0
-
-        popup = tk.Toplevel(self)
-        popup.withdraw()
-        popup.overrideredirect(True)
-        popup.transient(self.winfo_toplevel())
-        outer = tk.Frame(popup, background=palette.card_border)
-        outer.pack(fill="both", expand=True)
-        inner = tk.Frame(outer, background=palette.card)
-        inner.pack(fill="both", expand=True, padx=1, pady=1)
-
-        row_height = max(24, fonts.small.metrics("linespace") + 10)
-        self._rows = []
-        for item in self._values:
-            row = tk.Label(
-                inner,
-                text=item,
-                anchor="w",
-                padx=12,
-                pady=5,
-                background=palette.card,
-                foreground=palette.text,
-                font=fonts.small,
-                height=1,
-            )
-            row.pack(fill="x")
-            row.bind("<Enter>", lambda _event, index=len(self._rows): self._set_active(index))
-            row.bind("<Button-1>", lambda _event, value=item: self._select(value))
-            self._rows.append(row)
-
-        text_width = max((fonts.small.measure(item) for item in self._values), default=60)
-        popup.update_idletasks()
-        width = max(self._width, text_width + 24, inner.winfo_reqwidth() + 2)
-        height = max(row_height * len(self._values) + 2, inner.winfo_reqheight() + 2)
-        x = self.winfo_rootx()
-        y = self.winfo_rooty() + self._height + 2
-        if x + width > self.winfo_screenwidth():
-            x = max(0, self.winfo_screenwidth() - width - 4)
-        if y + height > self.winfo_screenheight():
-            y = max(0, self.winfo_rooty() - height - 2)
-        popup.geometry(f"{width}x{height}+{x}+{y}")
-
-        self._popup = popup
-        self._paint_rows()
-        popup.deiconify()
-        popup.lift()
-        popup.bind("<Button-1>", self._on_popup_click)
-        try:
-            popup.grab_set()
-        except tk.TclError:
-            pass
-        self._poll_after = self.after(100, self._poll_popup_focus)
-        return "break"
-
-    def _paint_rows(self) -> None:
-        palette = current_palette()
-        selected = self._values[self._values.index(self._variable.get())] if self._variable.get() in self._values else None
-        for index, row in enumerate(self._rows):
-            if index == self._active_index:
-                row.configure(background=palette.fill_strong, foreground=palette.text)
-            elif self._values[index] == selected:
-                row.configure(background=palette.accent_soft, foreground=palette.text)
-            else:
-                row.configure(background=palette.card, foreground=palette.text)
-
-    def _set_active(self, index: int) -> None:
-        self._active_index = max(0, min(len(self._values) - 1, index))
-        self._paint_rows()
-
-    def _move_active(self, direction: int) -> str:
-        if self._popup is not None:
-            self._set_active(self._active_index + direction)
-        return "break"
-
-    def _select(self, value: str) -> str:
-        self._variable.set(value)
-        self._close_popup()
-        if self._command is not None:
-            self._command()
-        return "break"
-
-    def _on_popup_click(self, event: tk.Event) -> None:
-        popup = self._popup
-        if popup is None:
-            return
-        x1 = popup.winfo_rootx()
-        y1 = popup.winfo_rooty()
-        x2 = x1 + popup.winfo_width()
-        y2 = y1 + popup.winfo_height()
-        if not (x1 <= event.x_root < x2 and y1 <= event.y_root < y2):
-            self._close_popup()
-
-    def _on_root_focus_out(self, _event: tk.Event) -> None:
-        if self._popup is None:
-            return
-        if self._focus_after is not None:
-            try:
-                self.after_cancel(self._focus_after)
-            except tk.TclError:
-                pass
-        self._focus_after = self.after(50, self._check_popup_focus)
-
-    def _check_popup_focus(self) -> None:
-        self._focus_after = None
-        if self._popup is None:
-            return
-        if not self._focus_is_inside():
-            self._close_popup()
-
-    def _focus_is_inside(self) -> bool:
-        try:
-            focused = self.focus_displayof()
-        except tk.TclError:
-            return False
-        if focused is self:
-            return True
-        popup = self._popup
-        return bool(
-            popup is not None
-            and focused is not None
-            and str(focused).startswith(str(popup) + ".")
-        )
-
-    def _poll_popup_focus(self) -> None:
-        self._poll_after = None
-        if self._popup is None:
-            return
-        if not self._focus_is_inside():
-            self._close_popup()
-            return
-        self._poll_after = self.after(100, self._poll_popup_focus)
-
-    def _close_popup(self) -> None:
-        popup = self._popup
-        self._popup = None
-        self._rows = []
-        for name in ("_focus_after", "_poll_after"):
-            timer = getattr(self, name, None)
-            if timer is not None:
-                try:
-                    self.after_cancel(timer)
-                except tk.TclError:
-                    pass
-                setattr(self, name, None)
-        if popup is None:
-            return
-        try:
-            popup.grab_release()
-        except tk.TclError:
-            pass
-        try:
-            popup.destroy()
-        except tk.TclError:
-            pass
 
 
 class SearchField(tk.Canvas):

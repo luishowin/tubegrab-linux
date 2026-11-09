@@ -9,7 +9,7 @@ import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from .utils import default_output_dir
+from .utils import VALID_CONTAINERS, default_output_dir
 
 LOGGER = logging.getLogger("tubegrab.config")
 
@@ -64,6 +64,7 @@ class Config:
     output_dir: str
     mode: str = "video"
     video_quality: int | None = None
+    video_container: str = "auto"
     window_width: int = DEFAULT_WIDTH
     window_height: int = DEFAULT_HEIGHT
     schema_version: int = 1
@@ -75,6 +76,7 @@ class Config:
     def normalised(self) -> "Config":
         mode = self.mode if self.mode in VALID_MODES else "video"
         quality = self.video_quality if self.video_quality in VALID_QUALITIES else None
+        container = self.video_container if self.video_container in VALID_CONTAINERS else "auto"
         output_dir = (self.output_dir or "").strip() or str(default_output_dir())
         width = _bounded_int(self.window_width, MIN_WIDTH, 4000, DEFAULT_WIDTH)
         height = _bounded_int(self.window_height, MIN_HEIGHT, 3000, DEFAULT_HEIGHT)
@@ -83,6 +85,7 @@ class Config:
             output_dir=output_dir,
             mode=mode,
             video_quality=quality,
+            video_container=container,
             window_width=width,
             window_height=height,
             schema_version=1,
@@ -124,6 +127,7 @@ def load_config(path: Path, logger: logging.Logger | None = None) -> Config:
         output_dir=data.get("output_dir") if isinstance(data.get("output_dir"), str) else defaults.output_dir,
         mode=data.get("mode") if isinstance(data.get("mode"), str) else defaults.mode,
         video_quality=data.get("video_quality") if isinstance(data.get("video_quality"), int) else None,
+        video_container=data.get("video_container") if isinstance(data.get("video_container"), str) else "auto",
         window_width=data.get("window_width", defaults.window_width),
         window_height=data.get("window_height", defaults.window_height),
     )
@@ -140,6 +144,7 @@ def save_config(path: Path, config: Config, logger: logging.Logger | None = None
         "output_dir": data.output_dir,
         "mode": data.mode,
         "video_quality": data.video_quality,
+        "video_container": data.video_container,
         "window_width": data.window_width,
         "window_height": data.window_height,
     }

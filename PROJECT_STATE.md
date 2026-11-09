@@ -1,11 +1,11 @@
 # TubeGrab project state
 
-_Last updated: 2026-11-08_
+_Last updated: 2026-11-09_
 
 ## Current state
 
 - Branch: `main` (merged from `feature/apple-ui`)
-- Version: `1.2.0`
+- Version: `1.3.0`
 - Base: `main` at the 1.1.1 release commit
 - Interface: Apple-inspired light/dark Tkinter UI with antialiased canvas surfaces
 - Palette: light/dark grays plus one blue accent; red is reserved for errors
@@ -15,7 +15,7 @@ _Last updated: 2026-11-08_
 
 - Replaced the original dark ttk layout with a custom Apple-like interface.
 - Added `tubegrab/widgets.py`:
-  - Canvas-drawn rounded cards, buttons, fields, segmented control, popup select, progress bar,
+  - Canvas-drawn rounded cards, buttons, fields, segmented controls, progress bar,
     status controls, and scroll frame
   - antialiased corner-tile renderer with per-surface background blending
 - Added light/dark palettes following GNOME `color-scheme`.
@@ -26,6 +26,8 @@ _Last updated: 2026-11-08_
   - Options/Preview stack vertically below ~820px content width
 - Reworked the quality popup into a custom dropdown that closes on outside click, `Escape`,
   selection, and application focus loss.
+- Replaced the quality dropdown with a full-width segmented slider, removing the popup entirely.
+- Added a video container picker (Auto / MP4 / WebM) and codec/container details in Preview.
 - Removed all custom cursors and the green accent; disabled Download is now neutral gray.
 - Replaced the application icon with the new YouTube-down-arrow mark and regenerated every PNG size.
 - Fixed the Tk 9 scroll-region centering bug that collapsed the page margin after resizing.
@@ -61,7 +63,7 @@ python3 -m unittest discover -s tests
 /usr/bin/python3 -m unittest discover -s tests
 ```
 
-Current result: **66 tests pass** under both the mise Python and system Python.
+Current result: **72 tests pass** under both the mise Python and system Python.
 
 Manual checks:
 
@@ -70,6 +72,8 @@ Manual checks:
 - queued, downloading, failed (wide Retry/Start over), and completed rows all fit
 - Preview/Options equal height
 - quality popup dismisses on outside click, focus loss, `Escape`, and selection
+- quality slider fits all nine steps at the minimum window size; container row hides in audio modes
+- MP4/WebM choices fall back to MKV when the source has no compatible streams
 - no page scrollbar when content fits
 - disabled Download is gray; enabled is blue
 - no green in normal/success UI
@@ -98,5 +102,5 @@ Measured 2026-11-02:
 RPM output:
 
 ```text
-dist/tubegrab-1.2.0-1.fc44.noarch.rpm
+dist/tubegrab-1.3.0-1.fc45.noarch.rpm
 ```

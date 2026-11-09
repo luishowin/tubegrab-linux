@@ -36,7 +36,6 @@ from .queue import ACTIVE_STATUSES, JobStatus, QueueManager, DownloadJob
 from .theme import apply_theme, current_fonts, current_palette
 from .widgets import (
     Card,
-    PopupSelect,
     RoundedButton,
     ScrollFrame,
     SearchField,
@@ -47,6 +46,7 @@ from .widgets import (
     separator,
 )
 from .utils import (
+    VALID_CONTAINERS,
     ValidationError,
     folder_is_usable,
     format_duration,
@@ -59,8 +59,8 @@ from .utils import (
 LOGGER = logging.getLogger("tubegrab.app")
 
 QUALITY_OPTIONS: tuple[tuple[str, int | None], ...] = (
-    ("Best available", None),
-    ("2160p (4K)", 2160),
+    ("Best", None),
+    ("4K", 2160),
     ("1440p", 1440),
     ("1080p", 1080),
     ("720p", 720),
@@ -71,19 +71,23 @@ QUALITY_OPTIONS: tuple[tuple[str, int | None], ...] = (
 )
 QUALITY_LABEL_TO_VALUE = dict(QUALITY_OPTIONS)
 QUALITY_VALUE_TO_LABEL = {value: label for label, value in QUALITY_OPTIONS}
+CONTAINER_LABELS = {"auto": "Auto", "mp4": "MP4", "webm": "WebM"}
 URL_STACK_WIDTH = 740
 GRID_STACK_WIDTH = 820
 
 
 def _quality_label(quality: int | None) -> str:
     if quality is None:
-        return "Best available"
+        return "Best"
     return f"{quality}p"
 
 
 def _mode_description(job: DownloadJob) -> str:
     if job.mode == "video":
-        return f"Video · {_quality_label(job.quality)}"
+        description = f"Video · {_quality_label(job.quality)}"
+        if job.container != "auto":
+            description += f" · {CONTAINER_LABELS.get(job.container, job.container.upper())}"
+        return description
     if job.mode == "mp3":
         return "Audio · MP3 V0"
     return "Audio · original"
@@ -547,14 +551,17 @@ class TubeGrabApp:
         self.url_var = tk.StringVar()
         self.mode_var = tk.StringVar(value=self.config.mode)
         self.quality_var = tk.StringVar(
-            value=QUALITY_VALUE_TO_LABEL.get(self.config.video_quality, "Best available")
+            value=QUALITY_VALUE_TO_LABEL.get(self.config.video_quality, "Best")
         )
+        self.container_var = tk.StringVar(value=self.config.video_container)
         self.folder_var = tk.StringVar(value=self.config.output_dir)
         self.status_var = tk.StringVar(value="Ready")
         self.preview_title_var = tk.StringVar(value="No preview yet")
         self._preview_full_title = "No preview yet"
         self.preview_meta_var = tk.StringVar(value="Paste a link and choose Preview.")
         self.preview_res_var = tk.StringVar(value="")
+        self.preview_codec_var = tk.StringVar(value="")
+        self.preview_container_var = tk.StringVar(value="")
         self.preview_audio_var = tk.StringVar(value="")
         self.preview_status_var = tk.StringVar(value="")
         self.input_error_var = tk.StringVar(value="")
@@ -577,6 +584,7 @@ class TubeGrabApp:
         self.url_var.trace_add("write", self._on_url_changed)
         self.mode_var.trace_add("write", self._on_mode_changed)
         self.quality_var.trace_add("write", self._on_quality_changed)
+        self.container_var.trace_add("write", self._on_container_changed)
         self.folder_var.trace_add("write", self._on_folder_changed)
 
         self.root.protocol("WM_DELETE_WINDOW", self.request_close)
@@ -735,21 +743,12 @@ class TubeGrabApp:
         quality_row.columnconfigure(0, weight=1)
         self.quality_label = tk.Label(
             quality_row,
-            text="Quality",
+            text="Video quality",
             background=palette.card,
             foreground=palette.text,
             font=fonts.base,
         )
-        self.quality_label.grid(row=0, column=0, sticky="w", padx=(14, 10), pady=10)
-        self.quality_combo = PopupSelect(
-            quality_row,
-            self.quality_var,
-            [label for label, _value in QUALITY_OPTIONS],
-            background=palette.card,
-            chevron=load_icon("chevron"),
-            command=self._on_quality_changed,
-        )
-        self.quality_combo.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=8)
+        self.quality_label.grid(row=0, column=0, sticky="w", padx=(14, 10), pady=(10, 5))
         self.quality_static = tk.Label(
             quality_row,
             text="",
@@ -757,13 +756,47 @@ class TubeGrabApp:
             foreground=palette.text2,
             font=fonts.small,
         )
-        self.quality_static.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=8)
+        self.quality_static.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=(10, 5))
         self.quality_static.grid_remove()
+        self.quality_slider = SegmentedControl(
+            quality_row,
+            self.quality_var,
+            [(label, label) for label, _value in QUALITY_OPTIONS],
+            background=palette.card,
+            font=fonts.small_bold,
+            stretch=True,
+            command=self._on_quality_changed,
+        )
+        self.quality_slider.grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=(14, 14), pady=(0, 10)
+        )
 
         separator(options).grid(row=3, column=0, sticky="ew")
 
+        self.container_row = tk.Frame(options, background=palette.card)
+        self.container_row.grid(row=4, column=0, sticky="ew")
+        self.container_row.columnconfigure(0, weight=1)
+        tk.Label(
+            self.container_row,
+            text="Container",
+            background=palette.card,
+            foreground=palette.text,
+            font=fonts.base,
+        ).grid(row=0, column=0, sticky="w", padx=(14, 10), pady=10)
+        self.container_control = SegmentedControl(
+            self.container_row,
+            self.container_var,
+            (("auto", "Auto"), ("mp4", "MP4"), ("webm", "WebM")),
+            background=palette.card,
+            command=self._on_container_changed,
+        )
+        self.container_control.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=8)
+
+        self.container_bottom_separator = separator(options)
+        self.container_bottom_separator.grid(row=5, column=0, sticky="ew")
+
         save_row = tk.Frame(options, background=palette.card)
-        save_row.grid(row=4, column=0, sticky="ew")
+        save_row.grid(row=6, column=0, sticky="ew")
         save_row.columnconfigure(1, weight=1)
         tk.Label(
             save_row,
@@ -931,6 +964,28 @@ class TubeGrabApp:
             height=1,
         )
         self.preview_res.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        self.preview_codec = tk.Label(
+            preview_text,
+            textvariable=self.preview_codec_var,
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
+            anchor="w",
+            justify="left",
+            height=1,
+        )
+        self.preview_codec.grid(row=3, column=0, sticky="ew", pady=(2, 0))
+        self.preview_container = tk.Label(
+            preview_text,
+            textvariable=self.preview_container_var,
+            background=palette.card,
+            foreground=palette.text2,
+            font=fonts.small,
+            anchor="w",
+            justify="left",
+            height=1,
+        )
+        self.preview_container.grid(row=4, column=0, sticky="ew", pady=(2, 0))
         self.preview_audio = tk.Label(
             preview_text,
             textvariable=self.preview_audio_var,
@@ -941,7 +996,7 @@ class TubeGrabApp:
             justify="left",
             height=1,
         )
-        self.preview_audio.grid(row=3, column=0, sticky="ew", pady=(2, 0))
+        self.preview_audio.grid(row=5, column=0, sticky="ew", pady=(2, 0))
         self.preview_status = tk.Label(
             preview_text,
             textvariable=self.preview_status_var,
@@ -952,7 +1007,7 @@ class TubeGrabApp:
             justify="left",
             height=1,
         )
-        self.preview_status.grid(row=4, column=0, sticky="ew", pady=(4, 0))
+        self.preview_status.grid(row=6, column=0, sticky="ew", pady=(4, 0))
         self.preview_status.grid_remove()
 
         def resize_preview(event: tk.Event) -> None:
@@ -1198,23 +1253,43 @@ class TubeGrabApp:
         if mode == "video":
             self.quality_label.configure(text="Video quality")
             self.quality_static.grid_remove()
-            self.quality_combo.grid()
-            self.quality_note.configure(
-                text="Source quality. Separate video and audio streams are merged into MKV without re-encoding."
-            )
+            self.quality_slider.grid()
+            self.container_row.grid()
+            self.container_bottom_separator.grid()
+            container = self.container_var.get()
+            if container == "mp4":
+                note = (
+                    "Prefers H.264/AAC streams in an MP4 container. Falls back to MKV "
+                    "when the source has no compatible MP4 streams."
+                )
+            elif container == "webm":
+                note = (
+                    "Prefers VP9/AV1 and Opus streams in a WebM container. Falls back to "
+                    "MKV when the source has no compatible WebM streams."
+                )
+            else:
+                note = (
+                    "Source quality. Separate video and audio streams are merged into MKV "
+                    "without re-encoding."
+                )
+            self.quality_note.configure(text=note)
         elif mode == "audio":
             self.quality_label.configure(text="Audio quality")
-            self.quality_combo.grid_remove()
+            self.quality_slider.grid_remove()
             self.quality_static.configure(text="Original codec")
             self.quality_static.grid()
+            self.container_row.grid_remove()
+            self.container_bottom_separator.grid_remove()
             self.quality_note.configure(
                 text="Best available source audio, kept in its original codec (typically Opus or AAC). No lossy conversion."
             )
         else:
             self.quality_label.configure(text="Audio conversion")
-            self.quality_combo.grid_remove()
+            self.quality_slider.grid_remove()
             self.quality_static.configure(text="MP3 V0")
             self.quality_static.grid()
+            self.container_row.grid_remove()
+            self.container_bottom_separator.grid_remove()
             self.quality_note.configure(
                 text="Converts the best source audio to MP3 V0 VBR (~245 kbps). This conversion is lossy."
             )
@@ -1390,6 +1465,10 @@ class TubeGrabApp:
         self.preview_meta_var.set(truncate_text(meta, 34))
         summary = info.summary
         self.preview_res_var.set(truncate_text(f"Video: {summary.resolution_text}", 34))
+        self.preview_codec_var.set(truncate_text(f"Codecs: {summary.video_codec_text}", 34))
+        self.preview_container_var.set(
+            truncate_text(f"Containers: {summary.container_text}", 34)
+        )
         self.preview_audio_var.set(truncate_text(f"Audio: {summary.audio_text}", 34))
         self.preview_status_var.set("")
         self.preview_status.grid_remove()
@@ -1448,6 +1527,8 @@ class TubeGrabApp:
         self._refresh_preview_title()
         self.preview_meta_var.set("Paste a link and choose Preview.")
         self.preview_res_var.set("")
+        self.preview_codec_var.set("")
+        self.preview_container_var.set("")
         self.preview_audio_var.set("")
         self.preview_status_var.set("")
         self.preview_status.grid_remove()
@@ -1496,9 +1577,14 @@ class TubeGrabApp:
             return
 
         quality = QUALITY_LABEL_TO_VALUE.get(self.quality_var.get())
+        container = self.container_var.get() if mode == "video" else "auto"
+        if container not in VALID_CONTAINERS:
+            container = "auto"
         info = self.preview_info if self.preview_url == url else None
         try:
-            _job_id, added = self.queue_manager.add(url, mode, quality, folder, info=info)
+            _job_id, added = self.queue_manager.add(
+                url, mode, quality, folder, info=info, container=container
+            )
         except (ValidationError, ValueError) as exc:
             self._show_input_error(str(exc))
             return
@@ -1511,6 +1597,7 @@ class TubeGrabApp:
         self.config.output_dir = str(folder)
         self.config.mode = mode
         self.config.video_quality = quality
+        self.config.video_container = container
         self._schedule_save()
         self._clear_input_error()
         self.url_var.set("")
@@ -1632,6 +1719,10 @@ class TubeGrabApp:
     def _on_quality_changed(self, *_args: Any) -> None:
         self._schedule_save()
 
+    def _on_container_changed(self, *_args: Any) -> None:
+        self._update_mode_controls()
+        self._schedule_save()
+
     def _on_folder_changed(self, *_args: Any) -> None:
         self._update_action_states()
         self._schedule_save()
@@ -1649,6 +1740,9 @@ class TubeGrabApp:
     def _collect_config(self) -> Config:
         quality = QUALITY_LABEL_TO_VALUE.get(self.quality_var.get())
         mode = self.mode_var.get()
+        container = self.container_var.get()
+        if container not in VALID_CONTAINERS:
+            container = "auto"
         raw_folder = self.folder_var.get().strip()
         try:
             folder = Path(raw_folder).expanduser() if raw_folder else None
@@ -1659,6 +1753,7 @@ class TubeGrabApp:
             output_dir=output_dir,
             mode=mode if mode in {"video", "audio", "mp3"} else "video",
             video_quality=quality,
+            video_container=container,
             window_width=self.root.winfo_width(),
             window_height=self.root.winfo_height(),
         ).normalised()

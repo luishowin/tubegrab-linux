@@ -19,7 +19,7 @@ from .downloader import (
     ProcessHandle,
     ProgressUpdate,
 )
-from .utils import validate_url
+from .utils import VALID_CONTAINERS, validate_url
 
 LOGGER = logging.getLogger("tubegrab.queue")
 
@@ -49,6 +49,7 @@ class DownloadService(Protocol):
         handle: ProcessHandle,
         on_progress: Callable[[ProgressUpdate], None] | None = None,
         restart: bool = False,
+        container: str = "auto",
     ) -> DownloadResult: ...
 
 
@@ -59,6 +60,7 @@ class DownloadJob:
     mode: str
     quality: int | None
     output_dir: Path
+    container: str = "auto"
     status: JobStatus = JobStatus.QUEUED
     title: str | None = None
     info: MediaInfo | None = None
@@ -78,8 +80,8 @@ class DownloadJob:
         return self.title or (self.info.display_title if self.info else "") or self.url
 
     @property
-    def duplicate_key(self) -> tuple[str, str, int | None, str]:
-        return (self.url, self.mode, self.quality, str(self.output_dir))
+    def duplicate_key(self) -> tuple[str, str, int | None, str, str]:
+        return (self.url, self.mode, self.quality, self.container, str(self.output_dir))
 
 
 class QueueManager:
@@ -126,12 +128,15 @@ class QueueManager:
         quality: int | None,
         output_dir: Path,
         info: MediaInfo | None = None,
+        container: str = "auto",
     ) -> tuple[str, bool]:
         validated = validate_url(url)
         if mode not in {"video", "audio", "mp3"}:
             raise ValueError(f"Unknown mode: {mode}")
+        if container not in VALID_CONTAINERS:
+            raise ValueError(f"Unknown container: {container}")
         output = Path(output_dir)
-        key = (validated, mode, quality, str(output))
+        key = (validated, mode, quality, container, str(output))
 
         with self._condition:
             for job in self._jobs:
@@ -143,12 +148,19 @@ class QueueManager:
                 mode=mode,
                 quality=quality,
                 output_dir=output,
+                container=container,
                 title=info.title if info else None,
                 info=info if info and info.url == validated else None,
             )
             self._jobs.append(job)
             self._condition.notify_all()
-        self.logger.info("Queued %s (%s, quality=%s)", validated, mode, quality or "best")
+        self.logger.info(
+            "Queued %s (%s, quality=%s, container=%s)",
+            validated,
+            mode,
+            quality or "best",
+            container,
+        )
         self._changed()
         return job.id, True
 
@@ -298,6 +310,7 @@ class QueueManager:
                     handle,
                     on_progress,
                     restart=job.restart,
+                    container=job.container,
                 )
                 with self._lock:
                     job.status = JobStatus.COMPLETED
